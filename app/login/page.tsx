@@ -26,7 +26,13 @@ export default function LoginPage() {
           code: data.get("code"),
         }),
       });
-      const body = await response.json() as { error?: string };
+      const responseText = await response.text();
+      let body: { error?: string } = {};
+      try {
+        body = responseText ? JSON.parse(responseText) as { error?: string } : {};
+      } catch {
+        body = { error: "登录服务暂时异常，请稍后重试" };
+      }
       if (!response.ok) throw new Error(body.error ?? "操作失败，请稍后重试");
       window.location.href = "/";
     } catch (reason) {
@@ -56,7 +62,7 @@ export default function LoginPage() {
             {mode === "register" && <label className="block"><span className="mb-1.5 block text-xs font-bold text-[#6e6e73]">显示名称</span><Input name="displayName" autoComplete="name" maxLength={60} placeholder="例如：Henry" required /></label>}
             <label className="block"><span className="mb-1.5 block text-xs font-bold text-[#6e6e73]">邮箱</span><Input name="email" type="email" autoComplete="email" placeholder="name@example.com" required /></label>
             {mode === "reset" && <label className="block"><span className="mb-1.5 block text-xs font-bold text-[#6e6e73]">一次性重置码</span><Input name="code" autoComplete="one-time-code" minLength={10} maxLength={10} placeholder="由旅行管理员提供" required /></label>}
-            <label className="block"><span className="mb-1.5 block text-xs font-bold text-[#6e6e73]">{mode === "reset" ? "新密码" : "密码"}</span><Input name="password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={10} maxLength={128} placeholder="至少 10 位，包含字母和数字" required /></label>
+            <label className="block"><span className="mb-1.5 block text-xs font-bold text-[#6e6e73]">{mode === "reset" ? "新密码" : "密码"}</span><Input name="password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={6} maxLength={128} placeholder="至少 6 位，包含字母和数字" required /></label>
             {mode === "register" && <p className="text-xs leading-5 text-[#86868b]">管理员可直接注册；同行成员需要先由管理员把邮箱加入旅行成员列表。</p>}
             {mode === "reset" && <p className="text-xs leading-5 text-[#86868b]">请先联系旅行创建者，由创建者后台生成 30 分钟内有效的一次性重置码。</p>}
             {error && <div className="rounded-2xl border border-[#ff3b30]/15 bg-[#ff3b30]/7 px-4 py-3 text-sm text-[#b42318]">{error}</div>}

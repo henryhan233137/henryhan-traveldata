@@ -4,7 +4,8 @@ import type { NextResponse } from "next/server";
 
 const SESSION_COOKIE = "travel_session";
 const SESSION_DAYS = 30;
-const PASSWORD_ITERATIONS = 210_000;
+// Cloudflare Workers currently caps PBKDF2 at 100,000 iterations.
+const PASSWORD_ITERATIONS = 100_000;
 
 export type AppUser = {
   userId: string;
@@ -79,7 +80,7 @@ export function isOwnerEmail(email: string) {
 }
 
 export function validatePassword(password: string) {
-  if (password.length < 10) return "密码至少需要 10 个字符";
+  if (password.length < 6) return "密码至少需要 6 个字符";
   if (password.length > 128) return "密码不能超过 128 个字符";
   if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) return "密码需要同时包含字母和数字";
   return null;
