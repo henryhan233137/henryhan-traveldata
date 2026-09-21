@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { env } from "cloudflare:workers";
-import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { getAppUser } from "@/lib/auth";
 import { loadSharedTrip, saveSharedTrip } from "@/db/trips";
 import { normalizeTripSnapshot, type TripReminder } from "@/lib/trip-data";
 
@@ -11,7 +11,7 @@ function isOwner(email: string | undefined) {
 }
 
 export async function POST(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getAppUser();
   if (!user) return NextResponse.json({ error: "请先登录后编辑提醒" }, { status: 401 });
   const stored = await loadSharedTrip();
   if (!stored) return NextResponse.json({ error: "旅行档案暂时不可用" }, { status: 503 });
@@ -39,4 +39,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "提醒事项同步失败，请稍后重试" }, { status: 503 });
   }
 }
-

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { env } from "cloudflare:workers";
-import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { getAppUser } from "@/lib/auth";
 import { loadSharedTrip, saveSharedTrip } from "@/db/trips";
 import { normalizeTripSnapshot, type TripLedger } from "@/lib/trip-data";
 
@@ -16,7 +16,7 @@ function ledgerAllowed(email: string | undefined, trip: ReturnType<typeof normal
 }
 
 export async function POST(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getAppUser();
   if (!user) return NextResponse.json({ error: "请先登录后记账" }, { status: 401 });
   const stored = await loadSharedTrip();
   if (!stored) return NextResponse.json({ error: "旅行档案暂时不可用" }, { status: 503 });

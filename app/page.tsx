@@ -2,8 +2,8 @@
 
 import {
   BellRing, CalendarDays, Check, ChevronRight, CloudSnow, Edit3, FileDown,
-  Hotel, Landmark, Loader2, Map, MapPinned, Navigation, Plane, PlaneTakeoff,
-  Plus, Save, ShoppingBag, Ticket, TrainFront, Trash2, Utensils, Users, Waves,
+  Hotel, Landmark, Loader2, LogOut, Map, MapPinned, Navigation, Plane, PlaneTakeoff,
+  Plus, Save, ShieldCheck, ShoppingBag, Ticket, TrainFront, Trash2, Utensils, Users, Waves,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,19 @@ const kindIcon = {
 
 const memberColors = ["#F1464E", "#287B90", "#C58B32", "#8B6AA8", "#0071E3", "#2E8B57", "#C04C8A", "#6B7280"];
 
+type WeatherPayload = { city: string; days: { date: string; code: number; max: number; min: number; rain: number; wind: number }[] };
+type TripApiPayload = {
+  trip?: TripSnapshot;
+  canEdit?: boolean;
+  canEditLedger?: boolean;
+  canEditReminders?: boolean;
+  canEditTickets?: boolean;
+  viewerMemberId?: string | null;
+  email?: string;
+  storageUnavailable?: boolean;
+};
+type MutationPayload = { error?: string; reminders?: TripReminder[] };
+
 export default function Home() {
   const [trip, setTrip] = useState<TripSnapshot>(defaultTrip);
   const [canEdit, setCanEdit] = useState(false);
@@ -38,6 +51,7 @@ export default function Home() {
   const [canEditReminders, setCanEditReminders] = useState(false);
   const [canEditTickets, setCanEditTickets] = useState(false);
   const [viewerMemberId, setViewerMemberId] = useState<string | null>(null);
+  const [viewerEmail, setViewerEmail] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
@@ -45,19 +59,27 @@ export default function Home() {
   const [newTripOpen, setNewTripOpen] = useState(false);
   const [infoDialog, setInfoDialog] = useState<"members" | "weather" | "reminders" | null>(null);
   const [weatherCity, setWeatherCity] = useState<"seoul" | "busan">("seoul");
-  const [weather, setWeather] = useState<{ city: string; days: { date: string; code: number; max: number; min: number; rain: number; wind: number }[] } | null>(null);
+  const [weather, setWeather] = useState<WeatherPayload | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/trip")
-      .then((response) => response.json())
+      .then(async (response) => {
+        if (response.status === 401) {
+          window.location.href = "/login";
+          return null;
+        }
+        return await response.json() as TripApiPayload;
+      })
       .then((data) => {
+        if (!data) return;
         if (data.trip) setTrip(normalizeTripSnapshot(data.trip));
         setCanEdit(Boolean(data.canEdit));
         setCanEditLedger(Boolean(data.canEditLedger));
         setCanEditReminders(Boolean(data.canEditReminders));
         setCanEditTickets(Boolean(data.canEditTickets));
         setViewerMemberId(data.viewerMemberId || null);
+        setViewerEmail(data.email || "");
         if (data.storageUnavailable) setNotice("当前使用本地预览数据，发布后即可云端保存。");
       })
       .catch(() => setNotice("暂时使用内置行程，稍后可重新同步。"))
@@ -69,15 +91,17 @@ export default function Home() {
     setWeatherLoading(true);
     const controller = new AbortController();
     const coordinates = weatherCity === "busan" ? { latitude: 35.1796, longitude: 129.0756, name: "釜山" } : { latitude: 37.5665, longitude: 126.978, name: "首尔" };
-    async function loadWeather() {
+    async function loadWeather(): Promise<WeatherPayload | null> {
       try {
         const response = await fetch(`/api/weather?city=${weatherCity}`, { signal: controller.signal });
-        if (response.ok) return await response.json();
+        if (response.ok) return await response.json() as WeatherPayload;
         const query = new URLSearchParams({ latitude: String(coordinates.latitude), longitude: String(coordinates.longitude), daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max", timezone: "Asia/Seoul", forecast_days: "7" });
         const fallback = await fetch(`https://api.open-meteo.com/v1/forecast?${query}`, { signal: controller.signal });
         if (!fallback.ok) throw new Error("weather unavailable");
-        const data = await fallback.json();
-        return { city: coordinates.name, days: (data.daily?.time || []).map((date: string, index: number) => ({ date, code: data.daily.weather_code[index], max: data.daily.temperature_2m_max[index], min: data.daily.temperature_2m_min[index], rain: data.daily.precipitation_probability_max[index], wind: data.daily.wind_speed_10m_max[index] })) };
+        const data = await fallback.json() as { daily?: { time: string[]; weather_code: number[]; temperature_2m_max: number[]; temperature_2m_min: number[]; precipitation_probability_max: number[]; wind_speed_10m_max: number[] } };
+        const daily = data.daily;
+        if (!daily) return null;
+        return { city: coordinates.name, days: daily.time.map((date: string, index: number) => ({ date, code: daily.weather_code[index], max: daily.temperature_2m_max[index], min: daily.temperature_2m_min[index], rain: daily.precipitation_probability_max[index], wind: daily.wind_speed_10m_max[index] })) };
       } catch {
         return null;
       }
@@ -137,7 +161,7 @@ export default function Home() {
 
   async function saveTrip() {
     if (!canEdit) {
-      window.location.href = "/signin-with-chatgpt?return_to=%2F";
+      window.location.href = "/login";
       return;
     }
     setSaving(true);
@@ -146,7 +170,7 @@ export default function Home() {
       const response = await fetch("/api/trip", {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(trip),
       });
-      const data = await response.json();
+      const data = await response.json() as MutationPayload;
       setNotice(response.ok ? "行程已同步保存。" : data.error ?? "保存失败，请稍后重试。");
     } catch {
       setNotice("网络暂时不可用，编辑内容仍保留在当前页面。请稍后保存。");
@@ -158,12 +182,12 @@ export default function Home() {
   async function saveLedger(nextLedger: TripLedger) {
     setTrip((current) => ({ ...current, ledger: nextLedger }));
     if (!canEditLedger) {
-      window.location.href = "/signin-with-chatgpt?return_to=%2F";
+      window.location.href = "/login";
       return;
     }
     try {
       const response = await fetch("/api/ledger", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(nextLedger) });
-      const data = await response.json();
+      const data = await response.json() as MutationPayload;
       setNotice(response.ok ? "共同账本已同步。" : data.error ?? "账本同步失败。");
     } catch {
       setNotice("网络暂时不可用，账目保留在当前页面，稍后请再次保存。");
@@ -172,13 +196,16 @@ export default function Home() {
 
   async function saveReminders() {
     if (!canEditReminders) {
-      window.location.href = "/signin-with-chatgpt?return_to=%2F";
+      window.location.href = "/login";
       return;
     }
     try {
       const response = await fetch("/api/reminders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(trip.preTripReminders) });
-      const data = await response.json();
-      if (response.ok && Array.isArray(data.reminders)) setTrip((current) => ({ ...current, preTripReminders: data.reminders }));
+      const data = await response.json() as MutationPayload;
+      if (response.ok && Array.isArray(data.reminders)) {
+        const reminders = data.reminders;
+        setTrip((current) => ({ ...current, preTripReminders: reminders }));
+      }
       setNotice(response.ok ? "提醒事项已同步。" : data.error ?? "提醒事项保存失败。");
     } catch {
       setNotice("网络暂时不可用，提醒事项稍后请再次保存。");
@@ -187,7 +214,7 @@ export default function Home() {
 
   async function toggleTicket(dayIndex: number, stopIndex: number) {
     if (!canEditTickets) {
-      window.location.href = "/signin-with-chatgpt?return_to=%2F";
+      window.location.href = "/login";
       return;
     }
     const done = !trip.days[dayIndex]?.stops[stopIndex]?.ticketDone;
@@ -198,7 +225,7 @@ export default function Home() {
     setTrip(nextTrip);
     try {
       const response = await fetch("/api/tickets", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dayIndex, stopIndex, done }) });
-      const data = await response.json();
+      const data = await response.json() as MutationPayload;
       setNotice(response.ok ? "购票状态已同步。" : data.error ?? "购票状态保存失败。");
     } catch {
       setNotice("网络暂时不可用，购票状态稍后请再次保存。");
@@ -217,6 +244,11 @@ export default function Home() {
     URL.revokeObjectURL(url);
   }
 
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+    window.location.href = "/login";
+  }
+
   return (
     <main className="apple-shell min-h-screen bg-[#f5f5f7] text-[#1d1d1f]">
       <header className="sticky top-0 z-30 border-b border-black/5 bg-white/75 backdrop-blur-2xl">
@@ -226,6 +258,9 @@ export default function Home() {
             <div><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#86868b]">Private journey</p><p className="font-semibold tracking-tight">旅行计划</p></div>
           </div>
           <div className="flex items-center gap-2">
+            {viewerEmail && <span className="hidden max-w-44 truncate text-xs text-[#6e6e73] lg:inline">{viewerEmail}</span>}
+            {canEdit && <Button variant="ghost" size="icon" aria-label="创建者后台" onClick={() => { window.location.href = "/admin"; }}><ShieldCheck /></Button>}
+            {viewerEmail && <Button variant="ghost" size="icon" aria-label="退出登录" onClick={() => void logout()}><LogOut /></Button>}
             <Dialog open={newTripOpen} onOpenChange={setNewTripOpen}>
               <DialogTrigger asChild><Button variant="ghost" className="hidden sm:inline-flex"><Plus /> 新旅行</Button></DialogTrigger>
               <DialogContent className="sm:max-w-xl">

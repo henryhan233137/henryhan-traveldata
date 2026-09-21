@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { env } from "cloudflare:workers";
-import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { getAppUser } from "@/lib/auth";
 import { loadOwnerTrip, loadSharedTrip, saveOwnerTrip } from "@/db/trips";
 import { defaultTrip, normalizeTripSnapshot, type TripSnapshot } from "@/lib/trip-data";
 
@@ -23,7 +23,8 @@ function tripForViewer(trip: TripSnapshot, memberId: string | null) {
 }
 
 export async function GET() {
-  const user = await getChatGPTUser();
+  const user = await getAppUser();
+  if (!user) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   try {
     if (user && isOwner(user.email)) {
       const trip = await loadOwnerTrip(user.userId);
@@ -43,7 +44,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getAppUser();
   if (!user) return NextResponse.json({ error: "请先登录后保存" }, { status: 401 });
   if (!isOwner(user.email)) return NextResponse.json({ error: "当前账户只有查看权限" }, { status: 403 });
   const submitted = normalizeTripSnapshot((await request.json()) as TripSnapshot);
