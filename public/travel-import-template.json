@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "trip": {
+    "title": "成都旅行（待完善）",
+    "monthRange": "月份待定",
+    "exactStart": "",
+    "exactEnd": "",
+    "travelers": 1,
+    "selectedRoute": "openjaw",
+    "preferences": [
+      "文化",
+      "美食"
+    ],
+    "members": [
+      {
+        "id": "creator",
+        "name": "创建者",
+        "email": "",
+        "color": "#0071e3",
+        "ledgerAccess": true,
+        "permission": "admin"
+      }
+    ],
+    "days": [
+      {
+        "no": "01",
+        "city": "成都",
+        "title": "抵达与城市初见",
+        "summary": "请在对话中补充确认后的地点",
+        "stops": []
+      }
+    ],
+    "transports": [],
+    "ledger": {
+      "baseCurrency": "CNY",
+      "bills": [],
+      "repayments": []
+    },
+    "preTripReminders": [
+      {
+        "id": "prepare",
+        "text": "确认日期和交通",
+        "done": false,
+        "scope": "common"
+      }
+    ],
+    "notes": "请补充核实后的出行注意事项。",
+    "budget": []
+  }
+}

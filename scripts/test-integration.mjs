@@ -1,0 +1,41 @@
+import assert from "node:assert/strict";
+const base="http://127.0.0.1:8788";
+const run=Date.now();
+async function call(path,body,cookie,extra={}){
+ const r=await fetch(base+path,{method:body?"POST":"GET",headers:{"content-type":"application/json",origin:base,...(cookie?{cookie}:{}),...extra},body:body?JSON.stringify(body):undefined});
+ const data=await r.json();return {status:r.status,data,cookie:r.headers.get("set-cookie")?.split(";")[0]};
+}
+const wait=()=>new Promise(r=>setTimeout(r,1900));
+let owner=await call("/api/auth/register",{email:"test-owner@example.com",password:"Test123",displayName:"Test Owner"});
+if(owner.status===409){await wait();owner=await call("/api/auth/login",{email:"test-owner@example.com",password:"Test123"});}
+assert.equal(owner.status,200,JSON.stringify(owner.data));await wait();
+const friend=await call("/api/auth/register",{email:"friend"+run+"@example.com",password:"Test123",displayName:"Friend"});
+assert.equal(friend.status,200);assert.equal((await call("/api/journeys",null,friend.cookie)).data.journeys.length,0);
+assert.equal((await call("/api/journeys",null,null,{"oai-authenticated-user-id":"fake","oai-authenticated-user-email":"test-owner@example.com"})).status,401);
+const created=await call("/api/journeys",{action:"create",seed:true},owner.cookie);assert.equal(created.status,200,JSON.stringify(created.data));
+const id=created.data.id;
+let j=(await call("/api/journeys?id="+id,null,owner.cookie)).data.journeys[0];
+assert.equal((await call("/api/journeys?id="+id,null,friend.cookie)).status,403);
+const lookup=(await call("/api/journeys/accounts?"+new URLSearchParams({id,email:"friend"+run+"@example.com"}),null,owner.cookie)).data.users[0];
+j.trip.members[1]={...j.trip.members[1],email:lookup.email,accountId:lookup.id,permission:"editor"};
+let saved=await call("/api/journeys",{action:"members",id,revision:j.revision,members:j.trip.members},owner.cookie);assert.equal(saved.status,200,JSON.stringify(saved.data));
+assert.equal((await call("/api/journeys",{action:"members",id,revision:j.revision,members:j.trip.members},owner.cookie)).status,409);
+j=(await call("/api/journeys?id="+id,null,friend.cookie)).data.journeys[0];assert.equal(j.permissions.edit,true);
+assert.equal(j.trip.members[0].email,"");
+const secret=[{id:"private",scope:j.permissions.memberId,text:"Friend private secret",done:false}];
+saved=await call("/api/journeys",{action:"reminders",id,revision:j.revision,reminders:secret},friend.cookie);assert.equal(saved.status,200);
+const owned=(await call("/api/journeys?id="+id,null,owner.cookie)).data.journeys[0];
+assert.ok(!JSON.stringify(owned.trip).includes("Friend private secret"));
+const plan=structuredClone(j.trip);plan.title="Edited by friend";plan.members[1].permission="admin";
+saved=await call("/api/journeys",{action:"plan",id,revision:saved.data.revision,trip:plan},friend.cookie);assert.equal(saved.status,200,JSON.stringify(saved.data));
+assert.equal((await call("/api/journeys?id="+id,null,friend.cookie)).data.journeys[0].permissions.manage,false);
+const stale=await call("/api/journeys",{action:"plan",id,revision:owned.revision,trip:owned.trip},owner.cookie);assert.equal(stale.status,409);
+const before=(await call("/api/journeys?id="+id,null,owner.cookie)).data.journeys[0];
+const revoked=before.trip.members.map(m=>m.accountId===lookup.id?{...m,accountId:undefined}:m);
+saved=await call("/api/journeys",{action:"members",id,revision:before.revision,members:revoked},owner.cookie);assert.equal(saved.status,200);
+assert.equal((await call("/api/journeys?id="+id,null,friend.cookie)).status,403);
+assert.equal((await call("/api/trip",null,friend.cookie)).status,410);
+await wait();const recovery=await call("/api/auth/recovery",{},owner.cookie);assert.equal(recovery.status,200);
+const reset=await call("/api/auth/reset-password",{email:"test-owner@example.com",password:"Test123",code:recovery.data.code});assert.equal(reset.status,200,JSON.stringify(reset.data));
+assert.equal((await call("/api/journeys",null,owner.cookie)).status,401);
+console.log("PASS: registration, no-access account, spoofed identity rejection, account approval, editor permissions, private reminders, stale revision conflict, revocation, legacy route closure, recovery and session invalidation");

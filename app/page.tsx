@@ -1,441 +1,114 @@
 "use client";
-
-import {
-  BellRing, CalendarDays, Check, ChevronRight, CloudSnow, Edit3, FileDown,
-  Hotel, Landmark, Loader2, LogOut, Map, MapPinned, Navigation, Plane, PlaneTakeoff,
-  Plus, Save, ShieldCheck, ShoppingBag, Ticket, TrainFront, Trash2, Utensils, Users, Waves,
-} from "lucide-react";
-import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter,
-  DialogHeader, DialogTitle, DialogTrigger,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TripLedgerPanel } from "@/components/trip-ledger";
-import { TripRouteMap } from "@/components/trip-route-map";
-import { defaultTrip, normalizeTripSnapshot, type TripLedger, type TripReminder, type TripSnapshot, type TravelDay } from "@/lib/trip-data";
-
-const routeOptions = [
-  { id: "openjaw" as const, label: "推荐 · 首尔进 / 釜山出", detail: "NKG → ICN · KTX · PUS → NKG", tag: "少走回头路" },
-  { id: "round" as const, label: "备选 · 首尔往返", detail: "NKG ⇄ ICN · 往返 KTX", tag: "航班选择更多" },
-];
-
-const kindIcon = {
-  文化: Landmark, 风景: Waves, 美食: Utensils, 购物: ShoppingBag,
-  交通: TrainFront, 经典场景: MapPinned,
-} as const;
-
-const memberColors = ["#F1464E", "#287B90", "#C58B32", "#8B6AA8", "#0071E3", "#2E8B57", "#C04C8A", "#6B7280"];
-
-type WeatherPayload = { city: string; days: { date: string; code: number; max: number; min: number; rain: number; wind: number }[] };
-type TripApiPayload = {
-  trip?: TripSnapshot;
-  canEdit?: boolean;
-  canEditLedger?: boolean;
-  canEditReminders?: boolean;
-  canEditTickets?: boolean;
-  viewerMemberId?: string | null;
-  email?: string;
-  storageUnavailable?: boolean;
-};
-type MutationPayload = { error?: string; reminders?: TripReminder[] };
-
-export default function Home() {
-  const [trip, setTrip] = useState<TripSnapshot>(defaultTrip);
-  const [canEdit, setCanEdit] = useState(false);
-  const [canEditLedger, setCanEditLedger] = useState(false);
-  const [canEditReminders, setCanEditReminders] = useState(false);
-  const [canEditTickets, setCanEditTickets] = useState(false);
-  const [viewerMemberId, setViewerMemberId] = useState<string | null>(null);
-  const [viewerEmail, setViewerEmail] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState("");
-  const [editingDay, setEditingDay] = useState<number | null>(null);
-  const [newTripOpen, setNewTripOpen] = useState(false);
-  const [infoDialog, setInfoDialog] = useState<"members" | "weather" | "reminders" | null>(null);
-  const [weatherCity, setWeatherCity] = useState<"seoul" | "busan">("seoul");
-  const [weather, setWeather] = useState<WeatherPayload | null>(null);
-  const [weatherLoading, setWeatherLoading] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/trip")
-      .then(async (response) => {
-        if (response.status === 401) {
-          window.location.href = "/login";
-          return null;
-        }
-        return await response.json() as TripApiPayload;
-      })
-      .then((data) => {
-        if (!data) return;
-        if (data.trip) setTrip(normalizeTripSnapshot(data.trip));
-        setCanEdit(Boolean(data.canEdit));
-        setCanEditLedger(Boolean(data.canEditLedger));
-        setCanEditReminders(Boolean(data.canEditReminders));
-        setCanEditTickets(Boolean(data.canEditTickets));
-        setViewerMemberId(data.viewerMemberId || null);
-        setViewerEmail(data.email || "");
-        if (data.storageUnavailable) setNotice("当前使用本地预览数据，发布后即可云端保存。");
-      })
-      .catch(() => setNotice("暂时使用内置行程，稍后可重新同步。"))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    if (infoDialog !== "weather") return;
-    setWeatherLoading(true);
-    const controller = new AbortController();
-    const coordinates = weatherCity === "busan" ? { latitude: 35.1796, longitude: 129.0756, name: "釜山" } : { latitude: 37.5665, longitude: 126.978, name: "首尔" };
-    async function loadWeather(): Promise<WeatherPayload | null> {
-      try {
-        const response = await fetch(`/api/weather?city=${weatherCity}`, { signal: controller.signal });
-        if (response.ok) return await response.json() as WeatherPayload;
-        const query = new URLSearchParams({ latitude: String(coordinates.latitude), longitude: String(coordinates.longitude), daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max", timezone: "Asia/Seoul", forecast_days: "7" });
-        const fallback = await fetch(`https://api.open-meteo.com/v1/forecast?${query}`, { signal: controller.signal });
-        if (!fallback.ok) throw new Error("weather unavailable");
-        const data = await fallback.json() as { daily?: { time: string[]; weather_code: number[]; temperature_2m_max: number[]; temperature_2m_min: number[]; precipitation_probability_max: number[]; wind_speed_10m_max: number[] } };
-        const daily = data.daily;
-        if (!daily) return null;
-        return { city: coordinates.name, days: daily.time.map((date: string, index: number) => ({ date, code: daily.weather_code[index], max: daily.temperature_2m_max[index], min: daily.temperature_2m_min[index], rain: daily.precipitation_probability_max[index], wind: daily.wind_speed_10m_max[index] })) };
-      } catch {
-        return null;
-      }
-    }
-    void loadWeather().then((data) => { if (!controller.signal.aborted) setWeather(data); }).finally(() => { if (!controller.signal.aborted) setWeatherLoading(false); });
-    return () => controller.abort();
-  }, [infoDialog, weatherCity]);
-
-  useEffect(() => {
-    const context = document.modelContext;
-    if (!context?.registerTool) return;
-    const lifecycle = new AbortController();
-    void Promise.resolve(context.registerTool({
-      name: "update_trip_plan",
-      title: "更新旅行计划",
-      description: "更新当前首尔釜山旅行的暂定月份、同行人数或推荐交通路线，并同步刷新页面。",
-      inputSchema: {
-        type: "object",
-        properties: {
-          monthRange: { type: "string", description: "例如 2026年12月—2027年1月" },
-          travelers: { type: "integer", minimum: 1, maximum: 99 },
-          selectedRoute: { type: "string", enum: ["openjaw", "round"] },
-        },
-        additionalProperties: false,
-      },
-      annotations: { readOnlyHint: false, untrustedContentHint: false },
-      execute(input) {
-        const value = input as { monthRange?: string; travelers?: number; selectedRoute?: "openjaw" | "round" };
-        setTrip((current) => {
-          const requested = Number.isInteger(value.travelers) && Number(value.travelers) > 0 ? Number(value.travelers) : current.members.length;
-          const members = requested > current.members.length
-            ? [...current.members, ...Array.from({ length: requested - current.members.length }, (_, index) => { const number = current.members.length + index + 1; return { id: `member-${Date.now()}-${number}`, name: `同行人 ${number}`, email: "", color: memberColors[(number - 1) % memberColors.length], ledgerAccess: true }; })]
-            : current.members.slice(0, requested);
-          return { ...current, monthRange: value.monthRange?.trim() || current.monthRange, travelers: members.length, members, selectedRoute: value.selectedRoute ?? current.selectedRoute };
-        });
-        return { updated: true, fields: Object.keys(value) };
-      },
-    }, { signal: lifecycle.signal })).catch(() => undefined);
-    return () => lifecycle.abort();
-  }, []);
-
-  function patchTrip(patch: Partial<TripSnapshot>) {
-    setTrip((current) => ({ ...current, ...patch }));
-  }
-
-  function patchDay(index: number, patch: Partial<TravelDay>) {
-    setTrip((current) => ({
-      ...current,
-      days: current.days.map((day, dayIndex) => dayIndex === index ? { ...day, ...patch } : day),
-    }));
-  }
-
-  function googleMapsUrl(title: string, location?: { lat: number; lng: number }) {
-    const query = location ? `${location.lat},${location.lng} ${title}` : title;
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
-  }
-
-  async function saveTrip() {
-    if (!canEdit) {
-      window.location.href = "/login";
-      return;
-    }
-    setSaving(true);
-    setNotice("");
-    try {
-      const response = await fetch("/api/trip", {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(trip),
-      });
-      const data = await response.json() as MutationPayload;
-      setNotice(response.ok ? "行程已同步保存。" : data.error ?? "保存失败，请稍后重试。");
-    } catch {
-      setNotice("网络暂时不可用，编辑内容仍保留在当前页面。请稍后保存。");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function saveLedger(nextLedger: TripLedger) {
-    setTrip((current) => ({ ...current, ledger: nextLedger }));
-    if (!canEditLedger) {
-      window.location.href = "/login";
-      return;
-    }
-    try {
-      const response = await fetch("/api/ledger", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(nextLedger) });
-      const data = await response.json() as MutationPayload;
-      setNotice(response.ok ? "共同账本已同步。" : data.error ?? "账本同步失败。");
-    } catch {
-      setNotice("网络暂时不可用，账目保留在当前页面，稍后请再次保存。");
-    }
-  }
-
-  async function saveReminders() {
-    if (!canEditReminders) {
-      window.location.href = "/login";
-      return;
-    }
-    try {
-      const response = await fetch("/api/reminders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(trip.preTripReminders) });
-      const data = await response.json() as MutationPayload;
-      if (response.ok && Array.isArray(data.reminders)) {
-        const reminders = data.reminders;
-        setTrip((current) => ({ ...current, preTripReminders: reminders }));
-      }
-      setNotice(response.ok ? "提醒事项已同步。" : data.error ?? "提醒事项保存失败。");
-    } catch {
-      setNotice("网络暂时不可用，提醒事项稍后请再次保存。");
-    }
-  }
-
-  async function toggleTicket(dayIndex: number, stopIndex: number) {
-    if (!canEditTickets) {
-      window.location.href = "/login";
-      return;
-    }
-    const done = !trip.days[dayIndex]?.stops[stopIndex]?.ticketDone;
-    const nextTrip = {
-      ...trip,
-      days: trip.days.map((day, currentDay) => currentDay === dayIndex ? { ...day, stops: day.stops.map((stop, currentStop) => currentStop === stopIndex ? { ...stop, ticketDone: done } : stop) } : day),
-    };
-    setTrip(nextTrip);
-    try {
-      const response = await fetch("/api/tickets", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dayIndex, stopIndex, done }) });
-      const data = await response.json() as MutationPayload;
-      setNotice(response.ok ? "购票状态已同步。" : data.error ?? "购票状态保存失败。");
-    } catch {
-      setNotice("网络暂时不可用，购票状态稍后请再次保存。");
-    }
-  }
-
-  function downloadGuide() {
-    const sections = trip.days.map((day) => `${day.no} ${day.city}｜${day.title}\n${day.stops.map((stop) => `  ${stop.time} ${stop.title}｜${stop.note}`).join("\n")}`).join("\n\n");
-    const text = `${trip.title}\n${trip.monthRange}｜${trip.members.length}人\n\n${sections}\n\n注意事项\n${trip.notes}`;
-    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "首尔釜山旅行手册.txt";
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }
-
-  async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
-    window.location.href = "/login";
-  }
-
-  return (
-    <main className="apple-shell min-h-screen bg-[#f5f5f7] text-[#1d1d1f]">
-      <header className="sticky top-0 z-30 border-b border-black/5 bg-white/75 backdrop-blur-2xl">
-        <div className="mx-auto flex h-16 max-w-[1500px] items-center justify-between px-4 sm:px-7">
-          <div className="flex items-center gap-3">
-            <span className="grid size-9 place-items-center rounded-full bg-[#1d1d1f] text-white"><MapPinned className="size-[18px]" /></span>
-            <div><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#86868b]">Private journey</p><p className="font-semibold tracking-tight">旅行计划</p></div>
-          </div>
-          <div className="flex items-center gap-2">
-            {viewerEmail && <span className="hidden max-w-44 truncate text-xs text-[#6e6e73] lg:inline">{viewerEmail}</span>}
-            {canEdit && <Button variant="ghost" size="icon" aria-label="创建者后台" onClick={() => { window.location.href = "/admin"; }}><ShieldCheck /></Button>}
-            {viewerEmail && <Button variant="ghost" size="icon" aria-label="退出登录" onClick={() => void logout()}><LogOut /></Button>}
-            <Dialog open={newTripOpen} onOpenChange={setNewTripOpen}>
-              <DialogTrigger asChild><Button variant="ghost" className="hidden sm:inline-flex"><Plus /> 新旅行</Button></DialogTrigger>
-              <DialogContent className="sm:max-w-xl">
-                <DialogHeader><DialogTitle>创建新的旅行档案</DialogTitle><DialogDescription>只要输入目的地、月份和天数，即可生成可编辑的路线骨架。</DialogDescription></DialogHeader>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="出发地"><Input defaultValue="中国南京" /></Field>
-                  <Field label="目的地"><Input placeholder="例如：日本关西" /></Field>
-                  <Field label="大概月份"><Input placeholder="例如：2027年4月" /></Field>
-                  <Field label="旅行天数"><Input type="number" defaultValue="5" min="1" max="30" /></Field>
-                </div>
-                <Field label="旅行偏好"><Textarea placeholder="文化、风景、美食、购物……" /></Field>
-                <div className="rounded-xl border border-[#6eb3e8]/20 bg-[#6eb3e8]/7 p-3 text-sm leading-6 text-[#afc7dd]">当前版本先创建可编辑模板；接入可选 AI 服务后，可在网站内直接研究目的地并生成完整初稿。</div>
-                <DialogFooter><DialogClose asChild><Button variant="outline">取消</Button></DialogClose><Button onClick={() => { setNewTripOpen(false); setNotice("新旅行生成器已记录为下一步功能；当前先完成韩国案例。"); }}>生成草案</Button></DialogFooter>
-              </DialogContent>
-            </Dialog>
-            <Button onClick={saveTrip} className="rounded-full bg-[#0071e3] px-5 text-white hover:bg-[#0062c4]">{saving ? <Loader2 className="animate-spin" /> : <Save />}{canEdit ? "保存" : "登录编辑"}</Button>
-          </div>
-        </div>
-      </header>
-
-      <div className="mx-auto max-w-[1500px] px-4 pb-20 pt-5 sm:px-7 sm:pt-7">
-        {notice && <div className="mb-4 flex items-center justify-between rounded-2xl border border-black/5 bg-white px-4 py-3 text-sm text-[#515154] shadow-sm"><span>{notice}</span><button onClick={() => setNotice("")} className="text-[#86868b]">关闭</button></div>}
-        <section className="case-hero relative overflow-hidden rounded-[34px]">
-          <div className="hero-glow" />
-          <div className="relative grid min-h-[430px] items-center gap-8 p-7 sm:p-12 lg:grid-cols-[.9fr_1.1fr] lg:p-16">
-            <div>
-              <div className="flex flex-wrap items-center gap-2"><span className="evidence-label">KOREA · 5 DAYS</span><span className="status-pill">日期待定</span><span className="status-pill">南京出发</span></div>
-              <p className="mb-4 mt-10 flex items-center gap-2 text-sm font-semibold text-[#6e6e73]"><MapPinned className="size-4 text-[#0071e3]" /> 南京 → 首尔 → 釜山</p>
-              <h1 className="journey-title"><span>{trip.title}</span><small>SEOUL · BUSAN</small></h1>
-              <div className="mt-8 flex flex-wrap gap-3">
-                <Dialog>
-                  <DialogTrigger asChild><Button size="lg" className="rounded-full bg-[#0071e3] px-6 text-white hover:bg-[#0062c4]"><Edit3 /> 编辑旅行信息</Button></DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader><DialogTitle>编辑旅行信息</DialogTitle><DialogDescription>具体日期可以继续留空，先按月份规划。</DialogDescription></DialogHeader>
-                    <Field label="旅行名称"><Input value={trip.title} onChange={(event) => patchTrip({ title: event.target.value })} /></Field>
-                    <Field label="暂定月份"><Input value={trip.monthRange} onChange={(event) => patchTrip({ monthRange: event.target.value })} /></Field>
-                    <div className="grid grid-cols-2 gap-3"><Field label="确定出发日"><Input type="date" value={trip.exactStart} onChange={(event) => patchTrip({ exactStart: event.target.value })} /></Field><Field label="确定返程日"><Input type="date" value={trip.exactEnd} onChange={(event) => patchTrip({ exactEnd: event.target.value })} /></Field></div>
-                    <DialogFooter><DialogClose asChild><Button>完成</Button></DialogClose></DialogFooter>
-                  </DialogContent>
-                </Dialog>
-                <Button size="lg" variant="outline" onClick={downloadGuide} className="rounded-full border-black/10 bg-white/70 px-6"><FileDown /> 下载离线手册</Button>
-              </div>
-            </div>
-            <div className="pixel-stage"><img src="/images/korea-pixel-panorama.png" alt="首尔宫殿、南山塔、KTX、釜山海岸和韩国美食的原创像素画" /></div>
-          </div>
-        </section>
-
-        <section className="flight-board mt-5" aria-label="往返航班信息">
-          <div className="flight-board-heading"><span><PlaneTakeoff /></span><div><p>FLIGHT ITINERARY</p><h2>往返航班</h2></div></div>
-          <div className="flight-board-grid">{trip.transports.filter((item) => item.type === "飞机").map((item) => <article key={item.id} className="flight-summary-card"><div className="flight-summary-meta"><span>{item.id === "outbound" ? "去程" : "返程"}</span><time>{item.date}</time></div><div className="flight-airports"><strong>{item.from}</strong><span><Plane /></span><strong>{item.to}</strong></div><div className="flight-summary-detail"><b>{item.service}</b><span>{item.detail}</span></div></article>)}</div>
-        </section>
-
-        <section className="mt-5 grid gap-3 md:grid-cols-3">
-          <Intel icon={Users} label="同行成员" value={`${trip.members.length} 位成人`} meta="点击查看成员与记账权限" onClick={() => setInfoDialog("members")} />
-          <Intel icon={CloudSnow} label="季节提示" value="寒冷 · 可能降雪" meta="点击查看首尔 / 釜山未来 7 天" onClick={() => setInfoDialog("weather")} />
-          <Intel icon={BellRing} label="出发前提醒" value={`${trip.preTripReminders.filter((item) => item.done).length} / ${trip.preTripReminders.length} 已完成`} meta="点击勾选或编辑准备事项" onClick={() => setInfoDialog("reminders")} />
-        </section>
-
-        <Tabs defaultValue="overview" className="mt-8">
-          <TabsList variant="line" className="trip-tabs-list border-b border-black/8 pb-3">
-            {[["overview", "总览"], ["itinerary", "每日行程"], ["transport", "交通"], ["map", "路线图"], ["ledger", "共同账本"]].map(([value, label]) => <TabsTrigger key={value} value={value} className="trip-tab text-[#86868b] data-[state=active]:text-[#1d1d1f]">{label}</TabsTrigger>)}
-          </TabsList>
-
-          <TabsContent value="overview" className="mt-6 grid gap-5 xl:grid-cols-[1.3fr_.7fr]">
-            <section className="dossier-panel">
-              <PanelHeading kicker="ACTION LOG" title="五日行动记录" action="查看每日详情" />
-              <div className="space-y-2">{trip.days.map((day, index) => <DayRow key={day.no} day={day} index={index} onEdit={() => setEditingDay(index)} />)}</div>
-            </section>
-            <aside className="dossier-panel">
-              <PanelHeading kicker="ROUTE DECISION" title="交通路线待确认" />
-              <p className="mb-4 text-sm leading-6 text-[#91a3b9]">勾选后，地图、住宿城市和最后一天安排同步调整。</p>
-              <div className="space-y-3">{routeOptions.map((route) => {
-                const checked = trip.selectedRoute === route.id;
-                return <label key={route.id} className={`route-choice ${checked ? "route-choice-active" : ""}`}><Checkbox checked={checked} onCheckedChange={() => patchTrip({ selectedRoute: route.id })} className="mt-1 border-black/20 data-[state=checked]:border-[#0071e3] data-[state=checked]:bg-[#0071e3]" /><span className="min-w-0 flex-1"><span className="block font-semibold text-[#1d1d1f]">{route.label}</span><span className="mt-1 block text-sm text-[#6e6e73]">{route.detail}</span><span className="mt-3 inline-block rounded-full bg-[#e8f2ff] px-2.5 py-1 text-xs font-semibold text-[#0066cc]">{route.tag}</span></span></label>;
-              })}</div>
-              <div className="mt-5 rounded-2xl border border-dashed border-white/16 bg-black/12 p-4"><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-lg bg-[#f1464e]/12 text-[#f1464e]"><TrainFront className="size-5" /></span><div><p className="font-bold">首尔站 → 釜山站</p><p className="text-sm text-[#91a3b9]">KTX · 约 2小时30分 · 班次待选</p></div></div></div>
-            </aside>
-            <section className="dossier-panel min-w-0 xl:col-span-2"><PanelHeading kicker="TRIP MAP" title="本次旅行路线" action="按天筛选 · 可放大缩小" /><TripRouteMap days={trip.days} /></section>
-          </TabsContent>
-
-          <TabsContent value="itinerary" className="mt-6">
-            <section className="grid gap-4 lg:grid-cols-2">{trip.days.map((day, index) => <article key={day.no} className="dossier-panel">
-              <div className="mb-5 flex items-start justify-between"><div><p className="section-kicker">DAY {day.no} · {day.city}</p><h2 className="text-xl font-semibold tracking-tight">{day.title}</h2><p className="mt-1 text-sm text-[#6e6e73]">{day.summary}</p></div><Button size="icon-sm" variant="ghost" onClick={() => setEditingDay(index)} aria-label={`编辑第${index + 1}天`}><Edit3 /></Button></div>
-              <div className="timeline-list">{day.stops.map((stop, stopIndex) => { const Icon = kindIcon[stop.kind]; return <div key={`${stop.time}-${stop.title}`} className="timeline-item"><span className="timeline-dot"><Icon className="size-4" /></span><div className="min-w-0"><p className="text-xs font-semibold text-[#0071e3]">{stop.time} · {stop.kind}</p><h3 className="mt-1 font-semibold">{stop.title}</h3><p className="mt-1 text-sm leading-6 text-[#6e6e73]">{stop.note}</p><div className="mt-3 flex flex-wrap gap-2"><a href={googleMapsUrl(stop.title, stop.location)} target="_blank" rel="noreferrer" className="place-action"><Navigation /> Google 地图导航</a>{stop.ticketRequired && <button type="button" onClick={() => void toggleTicket(index, stopIndex)} className={`ticket-alert ${stop.ticketDone ? "ticket-alert-done" : ""}`}>{stop.ticketDone ? <Check /> : <Ticket />} {stop.ticketDone ? "已预约 / 已购票" : stop.ticketNote || "建议提前购票"}</button>}</div></div></div>; })}</div>
-            </article>)}</section>
-          </TabsContent>
-
-          <TabsContent value="transport" className="mt-6">
-            <section className="dossier-panel"><PanelHeading kicker="TRANSPORT FILES" title="交通档案" action="可直接修改" /><div className="grid gap-4 lg:grid-cols-3">{trip.transports.map((item, index) => <article key={item.id} className="transport-card"><div className="flex items-center justify-between"><span className="rounded-md bg-[#f1464e]/12 px-2 py-1 text-xs font-bold text-[#ff7279]">{item.type}</span><span className="text-xs text-[#91a3b9]">{item.status}</span></div><div className="mt-4 flex items-center gap-3"><span className="font-black">{item.from}</span><ChevronRight className="size-4 text-[#f1464e]" /><span className="font-black">{item.to}</span></div><div className="mt-4 space-y-3"><Field label="日期 / 行程日"><Input value={item.date} onChange={(event) => setTrip((current) => ({ ...current, transports: current.transports.map((transport, transportIndex) => transportIndex === index ? { ...transport, date: event.target.value } : transport) }))} /></Field><Field label="航班 / 车次"><Input value={item.service} onChange={(event) => setTrip((current) => ({ ...current, transports: current.transports.map((transport, transportIndex) => transportIndex === index ? { ...transport, service: event.target.value, status: "已录入" } : transport) }))} /></Field><Field label="详细信息"><Textarea value={item.detail} onChange={(event) => setTrip((current) => ({ ...current, transports: current.transports.map((transport, transportIndex) => transportIndex === index ? { ...transport, detail: event.target.value } : transport) }))} /></Field></div></article>)}</div></section>
-          </TabsContent>
-
-          <TabsContent value="map" className="mt-6 grid gap-5 xl:grid-cols-[1fr_.52fr]">
-            <section className="dossier-panel min-w-0"><PanelHeading kicker="THE WHOLE JOURNEY" title="本次旅程" action="按天筛选 · 可放大缩小" /><TripRouteMap days={trip.days} /></section>
-            <aside className="dossier-panel"><PanelHeading kicker="LIVE RULES" title="哪些内容会自动变化" /><div className="space-y-3">{[
-              [Map, "景点顺序改变", "重排当天路线和预计移动时间"],
-              [CloudSnow, "日期确定", "切换季节提示为实时天气预报"],
-              [Hotel, "酒店改变", "更新每天起点、返程时间与交通建议"],
-              [Plane, "航班录入", "联动首日与末日可用游玩时段"],
-            ].map(([Icon, title, detail]) => <div key={String(title)} className="sync-rule"><span><Icon className="size-5" /></span><div><p className="font-bold">{String(title)}</p><p className="mt-1 text-sm text-[#91a3b9]">{String(detail)}</p></div></div>)}</div></aside>
-          </TabsContent>
-
-          <TabsContent value="ledger" className="mt-6">
-            <TripLedgerPanel members={trip.members} ledger={trip.ledger} canEdit={canEditLedger} onChange={saveLedger} onLogin={() => { window.location.href = "/signin-with-chatgpt?return_to=%2F"; }} />
-          </TabsContent>
-
-        </Tabs>
-
-        <section className="travel-notes mt-12">
-          <div className="max-w-2xl"><p className="section-kicker">TRAVEL NOTES</p><h2 className="text-3xl font-semibold tracking-[-0.035em]">注意事项</h2><p className="mt-2 text-base leading-7 text-[#6e6e73]">签证、天气、行李或同行约定都可以写在这里，保存后与本次旅行同步。</p></div>
-          <Textarea value={trip.notes} onChange={(event) => patchTrip({ notes: event.target.value })} rows={7} disabled={!canEdit} className="mt-6 resize-y rounded-2xl border-black/8 bg-white p-5 text-base leading-8 shadow-sm" />
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-[#86868b]">每行一条更方便旅行途中快速查看。</p><Button onClick={saveTrip} className="rounded-full bg-[#1d1d1f] px-6 text-white hover:bg-black">{canEdit ? "保存注意事项" : "登录后编辑"}</Button></div>
-        </section>
-      </div>
-
-      <Dialog open={infoDialog !== null} onOpenChange={(open) => !open && setInfoDialog(null)}>
-        <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
-          {infoDialog === "members" && <>
-            <DialogHeader><DialogTitle>同行成员 · {trip.members.length} 人</DialogTitle><DialogDescription>人数没有固定上限。添加成员并填写其登录邮箱后，对方可以查看自己的个人提醒并参与共同记账。</DialogDescription></DialogHeader>
-            <div className="grid gap-3 sm:grid-cols-2">{trip.members.map((member, memberIndex) => <article key={member.id} className="member-editor-card">
-              <div className="mb-3 flex items-center gap-3"><span className="grid size-10 place-items-center rounded-full font-black text-white" style={{ background: member.color }}>{member.name.slice(0, 1)}</span><div className="min-w-0 flex-1"><p className="truncate font-semibold">成员 {memberIndex + 1}</p><p className="truncate text-xs text-[#86868b]">{member.email || "尚未填写登录邮箱"}</p></div>{canEdit && memberIndex > 0 && <Button size="icon-sm" variant="ghost" aria-label={`删除${member.name}`} onClick={() => setTrip((current) => { const members = current.members.filter((_, index) => index !== memberIndex); return { ...current, members, travelers: members.length }; })}><Trash2 /></Button>}</div>
-              <div className="grid gap-3"><Field label="显示名称"><Input value={member.name} disabled={!canEdit} onChange={(event) => setTrip((current) => ({ ...current, members: current.members.map((item, index) => index === memberIndex ? { ...item, name: event.target.value } : item) }))} /></Field><Field label="登录邮箱"><Input type="email" value={member.email} disabled={!canEdit} placeholder="填写成员登录所用邮箱" onChange={(event) => setTrip((current) => ({ ...current, members: current.members.map((item, index) => index === memberIndex ? { ...item, email: event.target.value.trim() } : item) }))} /></Field></div>
-            </article>)}</div>
-            {canEdit && <Button variant="outline" onClick={() => setTrip((current) => { const number = current.members.length + 1; const members = [...current.members, { id: `member-${Date.now()}`, name: `同行人 ${number}`, email: "", color: memberColors[(number - 1) % memberColors.length], ledgerAccess: true }]; return { ...current, members, travelers: members.length }; })}><Plus /> 添加同行成员</Button>}
-            <div className="rounded-xl border border-[#0071e3]/15 bg-[#0071e3]/5 p-3 text-sm leading-6 text-[#515154]">当前发布平台使用安全的 ChatGPT 邮箱身份验证，不会在本站保存密码。迁移到中国大陆可稳定访问的独立域名后，可再切换为“邮箱注册 + 自设密码”。</div>
-            <DialogFooter><Button variant="outline" onClick={() => setInfoDialog(null)}>关闭</Button>{canEdit && <Button onClick={() => { void saveTrip(); setInfoDialog(null); }}><Save /> 保存成员设置</Button>}</DialogFooter>
-          </>}
-          {infoDialog === "reminders" && <>
-            <DialogHeader><DialogTitle>出发前提醒事项</DialogTitle><DialogDescription>所有成员都能看到通用提醒；个人提醒只有对应成员本人可见。登录后可以自由增加、删除和勾选。</DialogDescription></DialogHeader>
-            <ReminderGroup title="通用提醒" hint="所有同行成员可见" scope="common" reminders={trip.preTripReminders} canEdit={canEdit} onChange={(reminders) => patchTrip({ preTripReminders: reminders })} />
-            {viewerMemberId && <ReminderGroup title="我的个人提醒" hint="仅自己可见" scope={viewerMemberId} reminders={trip.preTripReminders} canEdit={canEditReminders} onChange={(reminders) => patchTrip({ preTripReminders: reminders })} />}
-            {!canEditReminders && <div className="rounded-2xl bg-[#f5f5f7] p-4 text-sm leading-6 text-[#515154]">请先使用参与旅行的邮箱登录，随后即可添加和管理自己的个人提醒。</div>}
-            <DialogFooter><Button variant="outline" onClick={() => setInfoDialog(null)}>关闭</Button><Button onClick={() => { if (canEditReminders) { void saveReminders(); setInfoDialog(null); } else { window.location.href = "/signin-with-chatgpt?return_to=%2F"; } }}><Save /> {canEditReminders ? "保存提醒" : "登录后编辑"}</Button></DialogFooter>
-          </>}
-          {infoDialog === "weather" && <>
-            <DialogHeader><DialogTitle>首尔 / 釜山未来 7 天天气</DialogTitle><DialogDescription>通过本站服务器获取预报，避免浏览器直接依赖境外天气脚本；远期十二月至一月只能显示季节参考。</DialogDescription></DialogHeader>
-            <div className="flex gap-2"><Button variant={weatherCity === "seoul" ? "default" : "outline"} onClick={() => setWeatherCity("seoul")}>首尔</Button><Button variant={weatherCity === "busan" ? "default" : "outline"} onClick={() => setWeatherCity("busan")}>釜山</Button></div>
-            {weatherLoading ? <div className="grid min-h-48 place-items-center text-[#86868b]"><Loader2 className="size-6 animate-spin" /></div> : weather?.days?.length ? <div className="weather-grid">{weather.days.map((day) => <article key={day.date} className="weather-day"><p className="text-xs font-semibold text-[#86868b]">{new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", weekday: "short" }).format(new Date(`${day.date}T12:00:00`))}</p><strong className="mt-3 block text-lg">{weatherLabel(day.code)}</strong><p className="mt-3 text-2xl font-semibold">{Math.round(day.min)}°—{Math.round(day.max)}°</p><p className="mt-2 text-xs leading-5 text-[#6e6e73]">降水 {Math.round(day.rain)}% · 风速 {Math.round(day.wind)} km/h</p></article>)}</div> : <div className="rounded-2xl border border-[#ff9f0a]/20 bg-[#ff9f0a]/7 p-5 text-sm leading-7 text-[#6b4d15]">实时天气暂时不可用。首尔冬季通常比釜山更冷，建议按零下体感准备防风外套、保暖层和防滑鞋；出发前 7 天再以这里的实时预报为准。</div>}
-            <DialogFooter><DialogClose asChild><Button>知道了</Button></DialogClose></DialogFooter>
-          </>}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={editingDay !== null} onOpenChange={(open) => !open && setEditingDay(null)}>
-        <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
-          {editingDay !== null && <><DialogHeader><DialogTitle>编辑第 {editingDay + 1} 天</DialogTitle><DialogDescription>修改后，总览、地图地点与线路交通标注会立即更新。</DialogDescription></DialogHeader><div className="grid gap-4 sm:grid-cols-2"><Field label="城市"><Input value={trip.days[editingDay].city} onChange={(event) => patchDay(editingDay, { city: event.target.value })} /></Field><Field label="当天标题"><Input value={trip.days[editingDay].title} onChange={(event) => patchDay(editingDay, { title: event.target.value })} /></Field></div><Field label="路线摘要"><Input value={trip.days[editingDay].summary} onChange={(event) => patchDay(editingDay, { summary: event.target.value })} /></Field><div className="space-y-3">{trip.days[editingDay].stops.map((stop, stopIndex) => <div key={stopIndex} className="rounded-xl border border-black/8 bg-[#f5f5f7] p-3"><div className="grid gap-3 sm:grid-cols-[110px_1fr]"><Input value={stop.time} onChange={(event) => patchDay(editingDay, { stops: trip.days[editingDay].stops.map((current, currentIndex) => currentIndex === stopIndex ? { ...current, time: event.target.value } : current) })} /><Input value={stop.title} onChange={(event) => patchDay(editingDay, { stops: trip.days[editingDay].stops.map((current, currentIndex) => currentIndex === stopIndex ? { ...current, title: event.target.value } : current) })} /></div><Field label="前往这一站的交通"><Input className="mt-3" value={stop.transportFromPrevious || ""} placeholder="例如：地铁 · 约 20 分钟" onChange={(event) => patchDay(editingDay, { stops: trip.days[editingDay].stops.map((current, currentIndex) => currentIndex === stopIndex ? { ...current, transportFromPrevious: event.target.value } : current) })} /></Field><label className="mt-3 flex items-center gap-2 text-sm font-medium"><Checkbox checked={Boolean(stop.ticketRequired)} onCheckedChange={(checked) => patchDay(editingDay, { stops: trip.days[editingDay].stops.map((current, currentIndex) => currentIndex === stopIndex ? { ...current, ticketRequired: Boolean(checked) } : current) })} /> 需要提前购票或预约</label>{stop.ticketRequired && <Field label="购票提醒"><Input value={stop.ticketNote || ""} placeholder="例如：建议提前选择入场时段" onChange={(event) => patchDay(editingDay, { stops: trip.days[editingDay].stops.map((current, currentIndex) => currentIndex === stopIndex ? { ...current, ticketNote: event.target.value } : current) })} /></Field>}<Textarea className="mt-3" value={stop.note} onChange={(event) => patchDay(editingDay, { stops: trip.days[editingDay].stops.map((current, currentIndex) => currentIndex === stopIndex ? { ...current, note: event.target.value } : current) })} /></div>)}</div><DialogFooter><DialogClose asChild><Button><Check /> 完成编辑</Button></DialogClose></DialogFooter></>}
-        </DialogContent>
-      </Dialog>
-      {loading && <div className="fixed inset-x-0 bottom-4 mx-auto flex w-fit items-center gap-2 rounded-full bg-[#1d1d1f] px-4 py-2 text-sm text-white shadow-xl"><Loader2 className="size-4 animate-spin" /> 正在载入旅行档案</div>}
-    </main>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block"><span className="mb-1.5 block text-xs font-bold tracking-wide text-[#91a3b9]">{label}</span>{children}</label>; }
-
-function Intel({ icon: Icon, label, value, meta, onClick }: { icon: typeof CalendarDays; label: string; value: string; meta: string; onClick?: () => void }) {
-  const content = <div className="flex items-start justify-between"><div><p className="text-xs font-semibold tracking-[0.12em] text-[#86868b]">{label}</p><p className="mt-2 text-lg font-semibold tracking-tight text-[#1d1d1f]">{value}</p><p className="mt-1 text-sm text-[#6e6e73]">{meta}</p></div><span className="grid size-10 place-items-center rounded-full bg-[#e8f2ff] text-[#0071e3]"><Icon className="size-5" /></span></div>;
-  return onClick ? <button type="button" onClick={onClick} className="intel-card intel-card-button w-full text-left">{content}</button> : <article className="intel-card">{content}</article>;
-}
-
-function PanelHeading({ kicker, title, action }: { kicker: string; title: string; action?: string }) { return <div className="mb-5 flex items-center justify-between gap-4"><div><p className="section-kicker">{kicker}</p><h2 className="text-2xl font-semibold tracking-tight">{title}</h2></div>{action && <span className="hidden text-sm text-[#86868b] sm:block">{action}</span>}</div>; }
-
-function DayRow({ day, index, onEdit }: { day: TravelDay; index: number; onEdit: () => void }) { return <button onClick={onEdit} className="day-row group w-full text-left"><div className="day-number">{day.no}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-3 gap-y-1"><h3 className="font-semibold text-[#1d1d1f]">{day.title}</h3><span className="text-xs font-semibold text-[#0071e3]">{day.city}</span></div><p className="mt-1 truncate text-sm text-[#6e6e73]">{day.summary}</p></div><span className="hidden text-xs text-[#86868b] sm:block">{index === 2 ? "跨城" : "当日路线"}</span><ChevronRight className="size-4 text-[#86868b] transition group-hover:translate-x-1 group-hover:text-[#1d1d1f]" /></button>; }
-
-function ReminderGroup({ title, hint, scope, reminders, canEdit, onChange }: { title: string; hint: string; scope: string; reminders: TripReminder[]; canEdit: boolean; onChange: (next: TripReminder[]) => void }) {
-  const scoped = reminders.filter((item) => item.scope === scope);
-  function patch(id: string, update: Partial<TripReminder>) { onChange(reminders.map((item) => item.id === id ? { ...item, ...update } : item)); }
-  return <section className="reminder-group"><div className="mb-3 flex items-end justify-between gap-3"><div><h3 className="font-semibold">{title}</h3><p className="text-xs text-[#86868b]">{hint}</p></div><span className="text-xs text-[#86868b]">{scoped.filter((item) => item.done).length} / {scoped.length}</span></div><div className="grid gap-2">{scoped.map((reminder) => <div key={reminder.id} className="reminder-row"><Checkbox checked={reminder.done} disabled={!canEdit} onCheckedChange={(checked) => patch(reminder.id, { done: Boolean(checked) })} /><Input value={reminder.text} disabled={!canEdit} onChange={(event) => patch(reminder.id, { text: event.target.value })} className={reminder.done ? "line-through opacity-55" : ""} />{canEdit && <Button size="icon-sm" variant="ghost" aria-label="删除提醒" onClick={() => onChange(reminders.filter((item) => item.id !== reminder.id))}><Trash2 /></Button>}</div>)}</div>{canEdit && <Button className="mt-3" size="sm" variant="outline" onClick={() => onChange([...reminders, { id: `reminder-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, text: "新的提醒事项", done: false, scope }])}><Plus /> 添加提醒</Button>}</section>;
-}
-
-function weatherLabel(code: number) {
-  if (code === 0) return "晴朗";
-  if (code <= 3) return "多云";
-  if (code === 45 || code === 48) return "雾";
-  if (code >= 71 && code <= 77) return "降雪";
-  if (code >= 85) return "阵雪 / 阵雨";
-  if (code >= 51) return "有雨";
-  return "天气变化";
+import {useEffect,useRef,useState} from "react";
+import {Button} from "@/components/ui/button";
+import {Input} from "@/components/ui/input";
+import {Textarea} from "@/components/ui/textarea";
+import {Dialog,DialogContent,DialogHeader,DialogTitle} from "@/components/ui/dialog";
+import {MapPinned,Plane,Users,CloudSun,ListChecks,ShieldCheck,LogOut,Plus,Download,Save} from "lucide-react";
+import {LiveMap} from "@/components/live-map";
+import {Ledger} from "@/components/journey-ledger";
+import {MembersEditor,StopEditor} from "@/components/journey-editors";
+import {defaultTrip,type TripSnapshot,type TravelStop,type TransportPlan,type TripReminder} from "@/lib/trip-data";
+import {parseImport} from "@/lib/travel-schema";
+import {amapUrl,googleUrl,receiptFile,saveFile} from "@/lib/navigation";
+import {downloadGuide,printGuide} from "@/lib/offline-guide";
+import {scheduleWarnings} from "@/lib/schedule";
+import "./journey.css";
+type P={view:boolean;manage:boolean;edit:boolean;ledger:boolean;memberId:string|null};
+type J={id:string;revision:string;permissions:P;trip:TripSnapshot};
+type Api = {error?:string;journeys:J[];owner:boolean;user:{id:string;email:string;name:string};revision:string;trip:TripSnapshot;id:string;code:string;expires:string};
+type Weather={days:{date:string;max:number;min:number;rain:number}[]};
+const modes=["飞机","火车","KTX","地铁","公交","机场交通","出租车","自驾","轮渡","步行"] as const;
+function emptyTrip():TripSnapshot{return {...structuredClone(defaultTrip),title:"新的旅行",monthRange:"日期待定",exactStart:"",exactEnd:"",members:[],days:[{no:"01",title:"抵达目的地",city:"",summary:"",stops:[]}],transports:[],preTripReminders:[],notes:"",budget:[],ledger:{baseCurrency:"CNY",bills:[],repayments:[]},history:[]};}
+export default function Home(){
+ const [journeys,setJourneys]=useState<J[]>([]),[selected,setSelected]=useState(""),[trip,setTrip]=useState<TripSnapshot|null>(null);
+ const [owner,setOwner]=useState(false),[user,setUser]=useState({id:"",email:"",name:""}),[loading,setLoading]=useState(true),[notice,setNotice]=useState(""),[busy,setBusy]=useState(false),[dirty,setDirty]=useState(false);
+ const [tab,setTab]=useState("overview"),[dialog,setDialog]=useState<"members"|"weather"|"reminders"|"new"|"import"|"world"|null>(null);
+ const [stopEdit,setStopEdit]=useState<{day:number;index:number;stop:TravelStop}|null>(null);
+ const [imported,setImported]=useState<TripSnapshot|null>(null),[newTitle,setNewTitle]=useState(""),[newCity,setNewCity]=useState(""),[newDays,setNewDays]=useState(5),[newMonth,setNewMonth]=useState("");
+ const [reminders,setReminders]=useState<TripReminder[]>([]),[newReminder,setNewReminder]=useState(""),[reminderScope,setReminderScope]=useState("common");
+ const [weatherPoint,setWeatherPoint]=useState(0),[weather,setWeather]=useState<Weather|null>(null),[weatherStatus,setWeatherStatus]=useState("");
+ const current=journeys.find(j=>j.id===selected),p=current?.permissions;
+ const state=useRef({selected,trip,current,dirty});state.current={selected,trip,current,dirty};
+ const lock=useRef(false),drag=useRef<{day:number;index:number}|null>(null);
+ async function load(id?:string){
+  setLoading(true);
+  try{const response=await fetch("/api/journeys");if(response.status===401){location.href="/login";return;}
+   const data=await response.json() as Api;if(!response.ok)throw new Error(data.error);
+   setJourneys(data.journeys);setOwner(data.owner);setUser(data.user);
+   const chosen=data.journeys.find((j:J)=>j.id===(id||state.current.selected))||data.journeys[0];
+   setSelected(chosen?.id||"");setTrip(chosen?structuredClone(chosen.trip):null);setDirty(false);
+  }catch(e){setNotice((e as Error).message);}finally{setLoading(false);}
+ }
+ useEffect(()=>{void load();},[]);
+ useEffect(()=>{const timer=setInterval(async()=>{
+  const s=state.current;if(!s.selected||lock.current)return;
+  try{const r=await fetch("/api/journeys?id="+encodeURIComponent(s.selected));
+   if(r.status===403){setTrip(null);setJourneys(js=>js.filter(j=>j.id!==s.selected));setNotice("你对这次旅行的访问权限已被移除。");return;}
+   if(!r.ok)return;const data=await r.json() as Api;const fresh=data.journeys?.[0] as J;
+   if(fresh&&fresh.revision!==s.current?.revision){
+    if(s.dirty||dialog||stopEdit){setNotice("其他成员有更新。请先保存或下载草稿，再重新载入。");}
+    else{setJourneys(js=>js.map(j=>j.id===fresh.id?fresh:j));setTrip(structuredClone(fresh.trip));}
+   }
+  }catch{/* retain visible snapshot while offline */}
+ },30000);return()=>clearInterval(timer);},[dialog,stopEdit]);
+ useEffect(()=>{const f=(e:BeforeUnloadEvent)=>{if(state.current.dirty){e.preventDefault();e.returnValue="";}};window.addEventListener("beforeunload",f);return()=>window.removeEventListener("beforeunload",f);},[]);
+ function patch(change:Partial<TripSnapshot>){setTrip(t=>t?{...t,...change}:t);setDirty(true);}
+ async function mutate(action:string,values:Record<string,unknown>={}):Promise<boolean>{
+  if(lock.current)return false;const s=state.current;if(!s.current||!s.trip)return false;
+  if(s.dirty&&action!=="plan"){setNotice("请先保存行程草稿，再修改成员、账本或提醒。");return false;}
+  lock.current=true;setBusy(true);
+  try{const r=await fetch("/api/journeys",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action,id:s.selected,revision:s.current.revision,...values})});
+   const data=await r.json() as Api;if(!r.ok)throw new Error(data.error);
+   setJourneys(js=>js.map(j=>j.id===s.selected?{...j,revision:data.revision,trip:data.trip}:j));setTrip(data.trip);setDirty(false);setNotice("已保存并同步。");return true;
+  }catch(e){setNotice((e as Error).message);return false;}finally{lock.current=false;setBusy(false);}
+ }
+ async function create(t?:TripSnapshot,seed=false){setBusy(true);try{const r=await fetch("/api/journeys",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"create",trip:t,seed})});const d=await r.json() as Api;if(!r.ok)throw new Error(d.error);setDialog(null);setImported(null);await load(d.id);}catch(e){setNotice((e as Error).message);}finally{setBusy(false);}}
+ function changeDay(i:number,change:Partial<TripSnapshot["days"][number]>){if(trip)patch({days:trip.days.map((d,n)=>n===i?{...d,...change}:d)});}
+ function moveStop(from:number,index:number,to:number,position:number){if(!trip)return;const days=structuredClone(trip.days);const [s]=days[from].stops.splice(index,1);days[to].stops.splice(position,0,s);patch({days});}
+ async function copy(text:string){try{await navigator.clipboard.writeText(text);setNotice("已复制。");}catch{setNotice("复制失败，请长按文字手动复制："+text);}}
+ function dayDate(index:number){if(!trip?.exactStart)return "日期待定";const date=new Date(trip.exactStart+"T12:00:00Z");date.setUTCDate(date.getUTCDate()+index);return date.toISOString().slice(0,10);}
+ const points=trip?.days.flatMap(d=>d.stops).filter(s=>s.location)||[];
+ useEffect(()=>{if(dialog!=="weather")return;const point=points[weatherPoint]||points[0];if(!point?.location){setWeatherStatus("请先为行程地点填写坐标。");return;}const controller=new AbortController();setWeather(null);setWeatherStatus("正在读取近期天气…");
+ void fetch("/api/weather?"+new URLSearchParams({lat:String(point.location.lat),lng:String(point.location.lng),name:point.title}),{signal:controller.signal}).then(async r=>{const d=await r.json() as Api;if(!r.ok)throw new Error(d.error);setWeather(d as unknown as Weather);setWeatherStatus("");}).catch(e=>{if(!controller.signal.aborted)setWeatherStatus(e.message);});return()=>controller.abort();
+ },[dialog,weatherPoint,selected]);
+ async function recovery(){try{const r=await fetch("/api/auth/recovery",{method:"POST"});const d=await r.json() as Api;if(!r.ok)throw new Error(d.error);saveFile("创建者恢复码.txt",`账号：${user.email}\n恢复码：${d.code}\n有效期至：${d.expires}\n在登录页“重置”中使用。仅能使用一次，请私下保存。\n`,"text/plain;charset=utf-8");setNotice("恢复码已下载，请私下保存；重新生成会使旧码失效。");}catch(e){setNotice((e as Error).message);}}
+ function openDialog(v:typeof dialog){if(dirty&&v!=="weather"){setNotice("请先保存行程草稿。");return;}if(v==="reminders")setReminders(structuredClone(trip?.preTripReminders||[]));setDialog(v);}
+ if(loading&&!trip)return <main className="journey-app"><p className="empty">正在载入旅行…</p>{notice&&<p>{notice}</p>}</main>;
+ return <main className="journey-app"><header className="journey-top"><a href="/" className="brand"><MapPinned size={24}/><span>私人旅行档案</span></a><div className="row wrap"><span className="muted user-label">{user.name}</span>{owner&&<a className="plain-button" href="/admin"><ShieldCheck size={17}/>后台</a>}<Button variant="ghost" aria-label="退出登录" onClick={async()=>{await fetch("/api/auth/logout",{method:"POST"});location.href="/login";}}><LogOut size={18}/></Button></div></header>
+ <div className="journey-container"><div className="toolbar row between wrap"><div className="row wrap"><select aria-label="选择旅行" disabled={dirty} value={selected} onChange={e=>{const j=journeys.find(j=>j.id===e.target.value);setSelected(e.target.value);setTrip(j?structuredClone(j.trip):null);setTab("overview");}}>{!journeys.length&&<option value="">暂无旅行</option>}{journeys.map(j=><option value={j.id} key={j.id}>{j.trip.title}</option>)}</select>{owner&&<><Button variant="outline" onClick={()=>openDialog("new")}><Plus size={16}/>新旅行</Button><Button variant="outline" onClick={()=>openDialog("import")}>导入方案</Button><Button variant="ghost" onClick={()=>openDialog("world")}>私人足迹地图</Button></>}</div>{trip&&<div className="row wrap"><Button variant="outline" onClick={()=>downloadGuide(trip)}><Download size={16}/>离线 HTML</Button><Button variant="outline" onClick={()=>{try{printGuide(trip);}catch(e){setNotice((e as Error).message);}}}>保存 PDF</Button></div>}</div>
+ {notice&&<div className="notice" role="status">{notice}<button aria-label="关闭提示" onClick={()=>setNotice("")}>×</button></div>}
+ {!trip?<section className="travel-card empty"><h1>你的下一段旅行</h1><p>{owner?"新建旅行、导入对话生成的方案，或载入首尔釜山案例。":"注册成功。请将账号邮箱告诉旅行创建者，批准加入后，这里会显示对应旅行。"}</p>{owner&&<Button disabled={busy} onClick={()=>void create(undefined,true)}>载入首尔 · 釜山案例</Button>}<Button variant="outline" onClick={()=>void load()}>刷新旅行列表</Button></section>:<>
+ <section className="flight-strip">{trip.transports.filter(t=>t.type==="飞机").map(t=><article key={t.id}><Plane size={20}/><div><strong>{t.from} → {t.to}</strong><p>{t.date||"日期待定"} · {t.service||"班次待定"}</p><p className="muted">{t.detail}</p></div></article>)}{!trip.transports.some(t=>t.type==="飞机")&&<p>尚未添加航班，可在交通中自由录入。</p>}</section>
+ <section className="journey-hero"><p className="eyebrow">YOUR JOURNEY · {trip.days.length} DAYS</p>{p?.edit?<Input aria-label="旅行标题" className="journey-title" value={trip.title} onChange={e=>patch({title:e.target.value})}/>:<h1 className="journey-title">{trip.title}</h1>}<div className="fields"><label>暂定月份<Input disabled={!p?.edit} value={trip.monthRange} onChange={e=>patch({monthRange:e.target.value})}/></label><label>出发日期<Input disabled={!p?.edit} type="date" value={trip.exactStart} onChange={e=>{const start=e.target.value;const d=new Date(start+"T12:00:00Z");if(start)d.setUTCDate(d.getUTCDate()+trip.days.length-1);patch({exactStart:start,exactEnd:start?d.toISOString().slice(0,10):""});}}/></label><label>返回日期<Input disabled={!p?.edit} type="date" value={trip.exactEnd} onChange={e=>patch({exactEnd:e.target.value})}/></label></div></section>
+ <div className="quick-cards"><button onClick={()=>openDialog("members")}><Users/><strong>同行成员</strong><span>{trip.members.filter(m=>!m.archived).length} 人 · 查看与管理</span></button><button onClick={()=>openDialog("weather")}><CloudSun/><strong>季节与天气</strong><span>目的地近 7 天天气</span></button><button onClick={()=>openDialog("reminders")}><ListChecks/><strong>出发前提醒</strong><span>{trip.preTripReminders.filter(r=>r.done).length} / {trip.preTripReminders.length} 已完成</span></button></div>
+ <nav className="journey-tabs">{[["overview","总览"],["days","每日行程"],["transport","交通"],["ledger","记账分账"],["history","修改记录"]].map(([id,label])=><button key={id} aria-current={tab===id?"page":undefined} onClick={()=>setTab(id)}>{label}</button>)}</nav>
+ {tab==="overview"&&trip.days.some(d=>/首尔|釜山/.test(d.city))&&<img src="/images/korea-pixel-panorama.png" alt="首尔与釜山的冬季像素风装饰" style={{width:"100%",maxHeight:180,objectFit:"contain",margin:"12px 0"}}/>}
+ {scheduleWarnings(trip).map((w,i)=><p className="notice" key={i}>{w}</p>)}
+ {tab==="overview"&&<section className="travel-card"><p className="eyebrow">THE WHOLE JOURNEY</p><h2>本次旅程</h2><LiveMap days={trip.days}/><div className="day-summary">{trip.days.map((d,i)=><button className="inset" key={i} onClick={()=>setTab("days")}><span className="eyebrow">DAY {i+1}</span><h3>{d.city||"目的地待定"}</h3><p>{d.title}</p><p className="muted">{dayDate(i)}</p></button>)}</div></section>}
+ {tab==="days"&&<div className="stack">{trip.days.map((day,di)=><section className="travel-card" key={di} onDragOver={e=>{if(p?.edit)e.preventDefault();}} onDrop={e=>{e.preventDefault();if(drag.current&&p?.edit){moveStop(drag.current.day,drag.current.index,di,day.stops.length);drag.current=null;}}}><div className="row between wrap"><h2>第 {di+1} 天 · {day.city} <small>{dayDate(di)}</small></h2>{p?.edit&&<div className="row"><Button variant="ghost" disabled={di===0} onClick={()=>{const days=[...trip.days];[days[di-1],days[di]]=[days[di],days[di-1]];patch({days});}}>上移整天</Button><Button variant="ghost" onClick={()=>{if(confirm("删除这一天及其景点？保存后生效。"))patch({days:trip.days.filter((_,i)=>i!==di)});}}>删除这天</Button></div>}</div>
+ {p?.edit?<div className="fields"><label>城市<Input value={day.city} onChange={e=>changeDay(di,{city:e.target.value})}/></label><label>当天主题<Input value={day.title} onChange={e=>changeDay(di,{title:e.target.value})}/></label><label>摘要<Input value={day.summary} onChange={e=>changeDay(di,{summary:e.target.value})}/></label></div>:<p>{day.title} · {day.summary}</p>}
+ {day.stops.map((s,si)=><article key={si} className="stop-row" draggable={!!p?.edit} onDragStart={()=>{drag.current={day:di,index:si};}} onDrop={e=>{if(drag.current&&p?.edit){e.stopPropagation();moveStop(drag.current.day,drag.current.index,di,si);drag.current=null;}}}><div className="stop-number">{si+1}</div><div className="stop-body"><p className="eyebrow">{s.time} · {s.kind}</p><h3>{s.title}</h3><p>{s.note}</p><p className="muted">{s.transportFromPrevious}</p>{s.nativeName&&<p lang="und">{s.nativeName}</p>}{s.address&&<p>{s.address}</p>}{s.openingHours&&<p>开放：{s.openingHours} · 停留 {s.durationMinutes||"待定"} 分钟</p>}{s.ticketRequired&&<label className="check ticket"><input type="checkbox" checked={!!s.ticketDone} disabled={!p?.edit} onChange={e=>changeDay(di,{stops:day.stops.map((v,i)=>i===si?{...v,ticketDone:e.target.checked}:v)})}/>{s.ticketDone?"已购票 / 预约":"需要购票 / 预约"} · {s.ticketNote}</label>}<div className="row wrap"><a className="plain-button" href={googleUrl(s)} target="_blank" rel="noreferrer">Google 导航 ↗</a><a className="plain-button" href={amapUrl(s)} target="_blank" rel="noreferrer">高德地图 ↗</a><Button variant="outline" disabled={!s.nativeName||!s.verifiedAt} onClick={()=>void copy(s.nativeName!)}>复制当地名称</Button><Button variant="outline" disabled={!s.address||!s.verifiedAt} onClick={()=>void copy(s.address!)}>复制当地地址</Button></div>{!s.verifiedAt&&<p className="muted">当地名称与地址待核实；编辑地点补充来源并确认后可复制。</p>}
+ {p?.edit&&<div className="row wrap"><Button variant="ghost" onClick={()=>setStopEdit({day:di,index:si,stop:structuredClone(s)})}>编辑地点</Button><Button variant="ghost" disabled={!si} onClick={()=>moveStop(di,si,di,si-1)}>上移</Button><select aria-label="移动到另一天" value="" onChange={e=>{if(e.target.value!=="")moveStop(di,si,Number(e.target.value),trip.days[Number(e.target.value)].stops.length);}}><option value="">移动到…</option>{trip.days.map((_,i)=>i!==di&&<option key={i} value={i}>第 {i+1} 天</option>)}</select><Button variant="ghost" onClick={()=>changeDay(di,{stops:day.stops.filter((_,i)=>i!==si)})}>删除</Button></div>}</div></article>)}
+ {p?.edit&&<Button variant="outline" onClick={()=>setStopEdit({day:di,index:day.stops.length,stop:{title:"新地点",time:"09:00",kind:"文化",note:""}})}>添加地点</Button>}<details><summary>查看当天真实地图</summary><LiveMap days={[day]}/></details></section>)}{p?.edit&&<Button onClick={()=>patch({days:[...trip.days,{no:String(trip.days.length+1).padStart(2,"0"),title:"新的一天",city:"",summary:"",stops:[]}]})}>增加一天</Button>}</div>}
+ {tab==="transport"&&<div className="stack">{trip.transports.map((t,i)=><section className="travel-card" key={t.id}><div className="row between"><h2>{t.type} · {t.from} → {t.to}</h2>{p?.edit&&<Button variant="ghost" onClick={()=>patch({transports:trip.transports.filter((_,n)=>n!==i)})}>删除</Button>}</div><div className="fields"><label>交通工具<select disabled={!p?.edit} value={t.type} onChange={e=>patch({transports:trip.transports.map((v,n)=>n===i?{...v,type:e.target.value as TransportPlan["type"]}:v)})}>{modes.map(m=><option key={m}>{m}</option>)}</select></label>{([["from","出发地"],["to","到达地"],["date","出发当地日期时间"],["arrival","到达当地日期时间"],["departureTimezone","出发时区，如 Asia/Shanghai"],["arrivalTimezone","到达时区，如 Asia/Seoul"],["service","航班 / 车次 / 线路"],["terminal","航站楼 / 站台"],["seat","座位"],["baggage","行李额度"]] as const).map(([key,label])=><label key={key}>{label}<Input disabled={!p?.edit} value={t[key]||""} onChange={e=>patch({transports:trip.transports.map((v,n)=>n===i?{...v,[key]:e.target.value}:v)})}/></label>)}</div><label>详细说明<Textarea disabled={!p?.edit} value={t.detail} onChange={e=>patch({transports:trip.transports.map((v,n)=>n===i?{...v,detail:e.target.value}:v)})}/></label><p>本段同行人员</p><div className="row wrap">{trip.members.filter(m=>!m.archived).map(m=><label className="check" key={m.id}><input disabled={!p?.edit} type="checkbox" checked={t.memberIds?.includes(m.id)||false} onChange={e=>patch({transports:trip.transports.map((v,n)=>n===i?{...v,memberIds:e.target.checked?[...(v.memberIds||[]),m.id]:(v.memberIds||[]).filter(id=>id!==m.id)}:v)})}/>{m.name}</label>)}</div>{t.attachment&&<details><summary>查看交通附件</summary><img className="receipt" src={t.attachment} alt="交通附件"/></details>}{p?.edit&&<label>上传票据截图（同行可见）<Input type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>{const f=e.target.files?.[0];if(f)void receiptFile(f).then(attachment=>patch({transports:trip.transports.map((v,n)=>n===i?{...v,attachment}:v)})).catch(e=>setNotice(e.message));}}/>{t.attachment&&<Button variant="ghost" onClick={()=>patch({transports:trip.transports.map((v,n)=>n===i?{...v,attachment:undefined}:v)})}>移除附件</Button>}</label>}</section>)}{p?.edit&&<Button onClick={()=>patch({transports:[...trip.transports,{id:crypto.randomUUID(),type:"飞机",status:"待确认",from:"",to:"",date:"",service:"",detail:"",departureTimezone:"Asia/Shanghai",arrivalTimezone:"Asia/Shanghai"}]})}>添加交通</Button>}</div>}
+ {tab==="ledger"&&<Ledger key={selected} ledger={trip.ledger} members={trip.members} canEdit={!!p?.ledger} manager={!!p?.manage} viewerId={p?.memberId||null} onSave={ledger=>mutate("ledger",{ledger})}/>}
+ {tab==="history"&&<section className="travel-card"><h2>最近修改记录</h2><p className="muted">保留最近 100 次变更摘要。个人提醒记录仅本人可见。</p>{[...(trip.history||[])].reverse().map((h,i)=><p key={i}>{h.at.replace("T"," ").slice(0,19)} · {h.actor} · {h.action.startsWith("个人提醒")?"编辑个人提醒":h.action}</p>)}</section>}
+ <section className="travel-card notes"><h2>注意事项</h2><Textarea disabled={!p?.edit} value={trip.notes} onChange={e=>patch({notes:e.target.value})}/></section>
+ <footer className="save-bar"><span>{dirty?"有尚未保存的行程修改":"已载入云端版本"} · 多人更新每 30 秒检查一次</span><div className="row wrap">{dirty&&<Button variant="outline" onClick={()=>saveFile("旅行草稿.json",JSON.stringify({version:1,trip},null,2))}>下载草稿</Button>}<Button variant="outline" onClick={()=>{if(!dirty||confirm("重新载入会丢弃未保存修改。已下载草稿了吗？"))void load();}}>重新载入</Button>{p?.edit&&<Button disabled={busy||!dirty} onClick={()=>void mutate("plan",{trip})}><Save size={16}/>保存行程</Button>}</div></footer>
+ </>}
+ {owner&&<div className="row wrap bottom-tools"><Button variant="ghost" onClick={()=>void recovery()}>下载创建者恢复码</Button><a href="/旅行规划说明.md" download>下载对话规划说明</a><a href="/travel-import-template.json" download>下载导入模板</a></div>}
+ </div>
+ <Dialog open={!!dialog} onOpenChange={v=>{if(!v)setDialog(null);}}><DialogContent className="travel-dialog"><DialogHeader><DialogTitle>{{members:"同行成员",weather:"季节与近期天气",reminders:"出发前提醒",new:"创建旅行",import:"导入对话方案",world:"私人旅行足迹"}[dialog||"new"]}</DialogTitle></DialogHeader>
+ {notice&&<p role="status" className="notice">{notice}</p>}
+ {dialog==="reminders"&&!p?.memberId&&<p>请先在同行成员中为自己绑定已注册账号，保存后重新载入，即可编辑提醒。其他人的个人提醒始终不会显示。</p>}
+ {dialog==="members"&&trip&&<MembersEditor key={selected} trip={trip} journeyId={selected} manage={!!p?.manage} onSave={members=>mutate("members",{members})}/>}
+ {dialog==="world"&&owner&&<><p>仅创建者可见。显示已结束旅行的地点。</p><LiveMap days={journeys.filter(j=>j.trip.exactEnd&&j.trip.exactEnd<new Date().toISOString().slice(0,10)).flatMap(j=>j.trip.days)}/></>}
+ {dialog==="weather"&&<><label>查看地点<select value={weatherPoint} onChange={e=>setWeatherPoint(Number(e.target.value))}>{points.map((s,i)=><option key={i} value={i}>{s.title}</option>)}</select></label><p>以下为从今天起的 7 天预报，不代表远期出行天气。日期未确定时请在注意事项填写季节参考。</p>{weatherStatus&&<p>{weatherStatus}</p>}<div className="fields">{weather?.days.map(d=><article className="inset" key={d.date}><strong>{d.date}</strong><p>{d.min}–{d.max}℃</p><p>降雨概率 {d.rain}%</p></article>)}</div></>}
+ {dialog==="reminders"&&trip&&<div className="stack">{reminders.map((n,i)=><div className="row" key={n.id}><input aria-label="完成提醒" type="checkbox" disabled={n.scope==="common"&&!p?.manage} checked={n.done} onChange={e=>setReminders(rs=>rs.map((v,j)=>i===j?{...v,done:e.target.checked}:v))}/><Input aria-label="提醒内容" disabled={n.scope==="common"&&!p?.manage} value={n.text} onChange={e=>setReminders(rs=>rs.map((v,j)=>i===j?{...v,text:e.target.value}:v))}/><span>{n.scope==="common"?"通用":"个人"}</span>{(p?.manage||n.scope===p?.memberId)&&<Button variant="ghost" onClick={()=>setReminders(rs=>rs.filter((_,j)=>j!==i))}>删除</Button>}</div>)}{p?.memberId&&<><div className="row"><Input aria-label="新提醒" placeholder="添加提醒…" value={newReminder} onChange={e=>setNewReminder(e.target.value)}/><select value={p.manage?reminderScope:p.memberId} onChange={e=>setReminderScope(e.target.value)}>{p.manage&&<option value="common">通用提醒</option>}<option value={p.memberId}>个人提醒</option></select><Button onClick={()=>{if(newReminder.trim()){setReminders([...reminders,{id:crypto.randomUUID(),text:newReminder.trim(),done:false,scope:p.manage?reminderScope:p.memberId!}]);setNewReminder("");}}}>添加</Button></div><Button disabled={busy} onClick={()=>void mutate("reminders",{reminders})}>保存提醒</Button></>}</div>}
+ {dialog==="new"&&<div className="stack"><label>旅行标题<Input value={newTitle} onChange={e=>setNewTitle(e.target.value)}/></label><label>目的地<Input value={newCity} onChange={e=>setNewCity(e.target.value)}/></label><label>大致月份<Input value={newMonth} onChange={e=>setNewMonth(e.target.value)}/></label><label>天数<Input type="number" min="1" max="90" value={newDays} onChange={e=>setNewDays(Number(e.target.value))}/></label><Button disabled={busy||!newTitle.trim()||newDays<1||newDays>90} onClick={()=>{const t=emptyTrip();t.title=newTitle;t.monthRange=newMonth||"日期待定";t.days=Array.from({length:newDays},(_,i)=>({no:String(i+1).padStart(2,"0"),city:newCity,title:"待安排",summary:"",stops:[]}));void create(t);}}>创建空白旅行</Button>{trip&&<Button variant="outline" disabled={busy} onClick={()=>void create({...trip,title:trip.title+" · 副本"})}>复制当前旅行（不复制账本和权限）</Button>}</div>}
+ {dialog==="import"&&<div className="stack"><p>在聊天中确定路线后，上传按模板生成的 JSON。导入会创建新旅行，不会覆盖旧旅行或批准成员。</p><a href="/travel-import-template.json" download>下载模板</a><Input aria-label="上传方案 JSON" type="file" accept=".json,application/json" onChange={async e=>{try{const file=e.target.files?.[0];if(!file)return;if(file.size>1_200_000)throw new Error("文件不能超过 1.2MB");setImported(parseImport(JSON.parse(await file.text())));}catch(e){setImported(null);setNotice("导入失败："+(e as Error).message);}}}/>{imported&&<div className="inset"><h3>{imported.title}</h3><p>{imported.monthRange} · {imported.days.length} 天 · {imported.days.reduce((n,d)=>n+d.stops.length,0)} 个地点</p>{imported.days.map((d,i)=><p key={i}>第 {i+1} 天：{d.city} · {d.stops.map(s=>s.title).join(" → ")}</p>)}<Button disabled={busy} onClick={()=>void create(imported)}>确认导入为新旅行</Button></div>}</div>}
+ </DialogContent></Dialog>
+ <Dialog open={!!stopEdit} onOpenChange={v=>{if(!v)setStopEdit(null);}}><DialogContent className="travel-dialog"><DialogHeader><DialogTitle>编辑行程地点</DialogTitle></DialogHeader>{stopEdit&&<><StopEditor stop={stopEdit.stop} onChange={stop=>setStopEdit({...stopEdit,stop})}/><Button onClick={()=>{if(!trip||!stopEdit.stop.title.trim())return;const stops=[...trip.days[stopEdit.day].stops];stops[stopEdit.index]=stopEdit.stop;changeDay(stopEdit.day,{stops});setStopEdit(null);}}>应用到行程草稿</Button></>}</DialogContent></Dialog>
+ </main>;
 }

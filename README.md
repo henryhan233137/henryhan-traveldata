@@ -1,4 +1,28 @@
-# vinext-starter
+# Henry Travel · 私人旅行网站
+
+## 当前版本（2026-09-22）
+
+- 邮箱与密码开放注册；无邮件服务。注册不自动获得旅行权限，创建者需在同行成员中查找并批准账号。
+- 多旅行隔离、管理员/编辑/只读权限、独立记账权限；通用提醒和仅本人可见的个人提醒。
+- 真实 Leaflet / OpenStreetMap 地图，Google 导航和高德地点链接；当地名称标明核实来源。
+- 多付款人、按人均/金额/比例/份数分账、手动汇率、退款/作废、收款确认、票据和 CSV。
+- 行程、交通、成员在线编辑；版本冲突保护；页面每 30 秒同步，编辑中不覆盖草稿。
+- HTML 离线快照与浏览器打印 PDF；离线地图仅为坐标路线示意，不缓存整套地图瓦片。导出文件可能含个人提醒或票据，请自行保管。
+- 创建者下载恢复码；朋友忘记密码由管理员生成一次性重置码。服务器不保存或显示明文密码。
+- 使用 `public/travel-import-template.json` 和 `public/旅行规划说明.md` 在任意对话规划后导入；导入不携带账号授权、账单或他人私人提醒。
+
+### 零增量费用边界
+
+仅部署到现有 Cloudflare Workers / D1 Free，不升级、不绑定收费地图/邮件/AI服务。第三方免费服务可限流或不可用，不自动切换收费服务。大陆连通性不保证。
+应用限制 500 个注册账号、40 次旅行、100 位同行人、每次旅行含附件 1.2MB（UTF-8）、500 笔账单、500 笔还款。限额不代表平台额度保证；仍受 Cloudflare Free 自身配额约束。超限时停止或拒绝操作，不自动付费。
+地图数据 © OpenStreetMap contributors；地点搜索由 Photon 提供（https://github.com/komoot/photon），供合理个人使用，无可用性承诺。天气来自 Open-Meteo，显示当前起未来七天，不是待定出行月份的预报。
+
+### 验证与部署
+
+`node scripts/test-journey.mjs` 运行账目、权限和导入单元测试。`scripts/test-server.mjs` 与 `scripts/test-integration.mjs` 仅对本地 8788 端口运行，测试邮箱不是生产用户。
+先备份 D1，再执行 `drizzle/0003_free_limits.sql`，构建并通过 `scripts/prepare-cloudflare-deploy.mjs` 注入生产数据库 ID，部署现有 Worker。恢复码、备份、令牌和生产数据不得提交 Git。
+
+## 底层 starter 说明
 
 A clean full-stack starter running on [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and Drizzle support.
 

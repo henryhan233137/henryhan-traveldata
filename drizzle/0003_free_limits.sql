@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS service_limits (id TEXT PRIMARY KEY, next_at INTEGER NOT NULL);

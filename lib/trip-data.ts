@@ -1,4 +1,10 @@
 export type TravelStop = {
+  nativeName?: string;
+  address?: string;
+  sourceUrl?: string;
+  verifiedAt?: string;
+  durationMinutes?: number;
+  openingHours?: string;
   time: string;
   title: string;
   kind: "文化" | "风景" | "美食" | "购物" | "交通" | "经典场景";
@@ -27,7 +33,15 @@ export type TravelDay = {
 
 export type TransportPlan = {
   id: string;
-  type: "飞机" | "KTX" | "机场交通";
+  type: "飞机" | "KTX" | "机场交通" | "火车" | "地铁" | "公交" | "出租车" | "自驾" | "轮渡" | "步行";
+  arrival?: string;
+  departureTimezone?: string;
+  arrivalTimezone?: string;
+  terminal?: string;
+  seat?: string;
+  baggage?: string;
+  memberIds?: string[];
+  attachment?: string;
   status: "待确认" | "已录入";
   from: string;
   to: string;
@@ -37,6 +51,11 @@ export type TransportPlan = {
 };
 
 export type TripMember = {
+  accountId?: string;
+  permission?: "viewer" | "editor" | "admin";
+  archived?: boolean;
+  startDate?: string;
+  endDate?: string;
   id: string;
   name: string;
   email: string;
@@ -50,7 +69,14 @@ export type LedgerBill = {
   id: string;
   originalAmountCents: number;
   baseAmountCents: number;
-  currency: "CNY" | "KRW" | "USD" | "JPY";
+  currency: "CNY" | "KRW" | "USD" | "JPY" | "EUR" | "GBP" | "HKD";
+  splitMode?: "equal" | "amount" | "percent" | "shares";
+  splitValues?: Record<string, number>;
+  payments?: Record<string, number>;
+  refund?: boolean;
+  voided?: boolean;
+  receipt?: string;
+  day?: string;
   exchangeRate: number;
   category: LedgerCategory;
   note: string;
@@ -61,11 +87,13 @@ export type LedgerBill = {
 };
 
 export type TripLedger = {
-  baseCurrency: "CNY";
+  baseCurrency: "CNY" | "KRW" | "USD" | "JPY" | "EUR" | "GBP" | "HKD";
   bills: LedgerBill[];
+  repayments?: { id: string; fromId: string; toId: string; amount: number; confirmed: boolean; date: string }[];
 };
 
 export type TripSnapshot = {
+  history?: { at: string; actor: string; action: string }[];
   title: string;
   monthRange: string;
   exactStart: string;
@@ -162,19 +190,27 @@ export const defaultTrip: TripSnapshot = {
   notes: "冬季室内外温差较大，建议分层穿衣并准备防风外套。\n跨城日尽量少安排购物，四人行李需要预留电梯和进站时间。\n热门场馆及体验项目以官方网站的开放时间与预约规则为准。\n护照、电子票、酒店订单建议同时保存到手机离线文件。",
 };
 
+// Names checked against the linked official sources. Combined neighbourhood
+// stops deliberately remain unverified until split into individual places.
+const verifiedPlaces: Record<string, Pick<TravelStop,"nativeName"|"address"|"sourceUrl"|"verifiedAt">> = {
+ "仁川机场入境与交通": {nativeName:"인천국제공항",sourceUrl:"https://www.airport.kr/ap_ko/index.do",verifiedAt:"2026-09-22"},
+ "南山首尔塔夜景": {nativeName:"남산서울타워",address:"서울 용산구 남산공원길 105",sourceUrl:"https://korean.visitseoul.net/attractions/남산서울타워/KOP000036",verifiedAt:"2026-09-22"},
+ "海云台海岸散步": {nativeName:"해운대해수욕장",address:"부산광역시 해운대구 해운대해변로 264",sourceUrl:"https://www.visitbusan.net/archive/dataSearch/view.nm?dataSid=METADATA009458",verifiedAt:"2026-09-22"},
+ "金海机场": {nativeName:"김해국제공항",sourceUrl:"https://www.airport.co.kr/gimhae/",verifiedAt:"2026-09-22"},
+};
+for (const day of defaultTrip.days) for (const stop of day.stops) Object.assign(stop,verifiedPlaces[stop.title]||{});
 export function normalizeTripSnapshot(input: Partial<TripSnapshot> | null | undefined): TripSnapshot {
   const source = input ?? {};
   return {
     ...defaultTrip,
     ...source,
-    members: Array.isArray(source.members) && source.members.length ? source.members : defaultTrip.members,
+    members: Array.isArray(source.members) ? source.members : defaultTrip.members,
     ledger: source.ledger && Array.isArray(source.ledger.bills) ? source.ledger : defaultTrip.ledger,
-    days: Array.isArray(source.days) && source.days.length
-      ? source.days.map((day, dayIndex) => ({
-          ...defaultTrip.days[dayIndex],
+    days: Array.isArray(source.days)
+      ? source.days.map((day) => ({
           ...day,
-          stops: day.stops.map((stop, stopIndex) => ({
-            ...defaultTrip.days[dayIndex]?.stops[stopIndex],
+          stops: day.stops.map((stop) => ({
+            ...(!stop.nativeName && defaultTrip.days.some(d=>d.stops.some(s=>s.title===stop.title&&s.location&&stop.location&&Math.abs(s.location.lat-stop.location.lat)<.002&&Math.abs(s.location.lng-stop.location.lng)<.002))?verifiedPlaces[stop.title]:{}),
             ...stop,
           })),
         }))

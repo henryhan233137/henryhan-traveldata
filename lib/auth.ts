@@ -1,4 +1,4 @@
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { env } from "cloudflare:workers";
 import type { NextResponse } from "next/server";
 
@@ -129,20 +129,6 @@ export function clearSessionCookie(response: NextResponse) {
 }
 
 export async function getAppUser(): Promise<AppUser | null> {
-  const requestHeaders = await headers();
-
-  // Keep the existing Sites preview identity working while Cloudflare uses its own session cookie.
-  const sitesUserId = requestHeaders.get("oai-authenticated-user-id");
-  const sitesEmail = requestHeaders.get("oai-authenticated-user-email");
-  if (sitesUserId && sitesEmail) {
-    return {
-      userId: sitesUserId,
-      email: sitesEmail,
-      displayName: requestHeaders.get("oai-authenticated-user-full-name") ?? sitesEmail,
-      role: isOwnerEmail(sitesEmail) ? "owner" : "member",
-    };
-  }
-
   if (!env.DB) return null;
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;

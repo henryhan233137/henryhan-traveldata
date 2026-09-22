@@ -50,7 +50,7 @@ export default function LoginPage() {
             <span className="grid size-11 place-items-center rounded-full bg-white/10"><MapPinned className="size-5" /></span>
             <div><p className="text-xs font-semibold tracking-[.18em] text-white/55">PRIVATE JOURNEY</p><h1 className="mt-1 text-2xl font-semibold">旅行档案登录</h1></div>
           </div>
-          <p className="mt-5 text-sm leading-6 text-white/65">只有本次旅行的管理员和已邀请成员可以进入。行程、提醒和共同账本会在成员之间同步。</p>
+          <p className="mt-5 text-sm leading-6 text-white/65">任何人都可以注册。由旅行管理员确认加入后，即可查看对应行程和共同账本。</p>
         </div>
         <div className="p-7">
           <div className="mb-6 grid grid-cols-3 rounded-full bg-[#f0f0f2] p-1 text-sm font-semibold">
@@ -61,10 +61,10 @@ export default function LoginPage() {
           <form className="space-y-4" onSubmit={submit}>
             {mode === "register" && <label className="block"><span className="mb-1.5 block text-xs font-bold text-[#6e6e73]">显示名称</span><Input name="displayName" autoComplete="name" maxLength={60} placeholder="例如：Henry" required /></label>}
             <label className="block"><span className="mb-1.5 block text-xs font-bold text-[#6e6e73]">邮箱</span><Input name="email" type="email" autoComplete="email" placeholder="name@example.com" required /></label>
-            {mode === "reset" && <label className="block"><span className="mb-1.5 block text-xs font-bold text-[#6e6e73]">一次性重置码</span><Input name="code" autoComplete="one-time-code" minLength={10} maxLength={10} placeholder="由旅行管理员提供" required /></label>}
+            {mode === "reset" && <label className="block"><span className="mb-1.5 block text-xs font-bold text-[#6e6e73]">一次性重置码</span><Input name="code" autoComplete="one-time-code" minLength={10} maxLength={32} placeholder="由旅行管理员提供" required /></label>}
             <label className="block"><span className="mb-1.5 block text-xs font-bold text-[#6e6e73]">{mode === "reset" ? "新密码" : "密码"}</span><Input name="password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={6} maxLength={128} placeholder="至少 6 位，包含字母和数字" required /></label>
-            {mode === "register" && <p className="text-xs leading-5 text-[#86868b]">管理员可直接注册；同行成员需要先由管理员把邮箱加入旅行成员列表。</p>}
-            {mode === "reset" && <p className="text-xs leading-5 text-[#86868b]">请先联系旅行创建者，由创建者后台生成 30 分钟内有效的一次性重置码。</p>}
+            {mode === "register" && <p className="text-xs leading-5 text-[#86868b]">无需邮箱验证或邮件。注册后请联系旅行创建者，将你的账号加入同行成员。</p>}
+            {mode === "reset" && <p className="text-xs leading-5 text-[#86868b]">成员请联系创建者取得一次性重置码；创建者可使用之前下载的恢复码。</p>}
             {error && <div className="rounded-2xl border border-[#ff3b30]/15 bg-[#ff3b30]/7 px-4 py-3 text-sm text-[#b42318]">{error}</div>}
             <Button className="h-12 w-full rounded-full bg-[#0071e3] text-white hover:bg-[#0062c4]" disabled={loading}>{loading ? <Loader2 className="animate-spin" /> : <LockKeyhole />}{mode === "login" ? "安全登录" : mode === "register" ? "创建账户" : "设置新密码"}</Button>
           </form>

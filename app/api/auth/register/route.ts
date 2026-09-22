@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { env } from "cloudflare:workers";
+import { authAllowed } from "@/lib/free-limits";
 import {
   assertSameOrigin,
   createSession,
@@ -9,8 +10,6 @@ import {
   setSessionCookie,
   validatePassword,
 } from "@/lib/auth";
-import { loadSharedTrip } from "@/db/trips";
-import { normalizeTripSnapshot } from "@/lib/trip-data";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +17,9 @@ export async function POST(request: Request) {
   try {
     if (!assertSameOrigin(request)) return NextResponse.json({ error: "无效的请求来源" }, { status: 403 });
     if (!env.DB) return NextResponse.json({ error: "数据库暂时不可用" }, { status: 503 });
+    if (!await authAllowed(request)) return NextResponse.json({error:"操作过快，请稍后再试"},{status:429});
+    const count=await env.DB.prepare("SELECT COUNT(*) AS total FROM app_users").first<{total:number}>();
+    if ((count?.total||0)>=500) return NextResponse.json({error:"已达到免费版本账号上限"},{status:429});
 
     const body = await request.json() as { email?: string; password?: string; displayName?: string };
     const email = normalizeEmail(body.email ?? "");
@@ -28,12 +30,6 @@ export async function POST(request: Request) {
     if (passwordError) return NextResponse.json({ error: passwordError }, { status: 400 });
 
     const owner = isOwnerEmail(email);
-    if (!owner) {
-      const stored = await loadSharedTrip();
-      const trip = stored ? normalizeTripSnapshot(stored.trip) : null;
-      const invited = trip?.members.some((member) => member.email && normalizeEmail(member.email) === email);
-      if (!invited) return NextResponse.json({ error: "该邮箱尚未被旅行管理员邀请" }, { status: 403 });
-    }
 
     const existing = await env.DB.prepare("SELECT id FROM app_users WHERE email = ? LIMIT 1").bind(email).first();
     if (existing) return NextResponse.json({ error: "该邮箱已经注册，请直接登录" }, { status: 409 });

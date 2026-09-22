@@ -1,0 +1,27 @@
+.journey-app{background:#f5f5f7;color:#1d1d1f;min-height:100vh;font-size:16px;line-height:1.55}
+.journey-app *,.travel-dialog *{min-width:0;box-sizing:border-box;overflow-wrap:anywhere}
+.journey-top{position:sticky;top:0;z-index:40;background:#ffffffed;border-bottom:1px solid #e5e5e8;display:flex;justify-content:space-between;align-items:center;padding:16px max(20px,calc((100vw - 1240px)/2));gap:16px}
+.brand{display:flex;align-items:center;gap:12px;font-weight:700;white-space:nowrap}
+.journey-container{max-width:1240px;margin:auto;padding:24px 24px 110px}
+.row{display:flex;gap:12px;align-items:center}.between{justify-content:space-between}.wrap{flex-wrap:wrap}.stack{display:grid;gap:20px}
+.journey-app select,.travel-dialog select{border:1px solid #d2d2d7;border-radius:10px;background:white;color:#1d1d1f;padding:10px;max-width:100%;font-size:14px}
+.journey-app label,.travel-dialog label{display:grid;gap:6px;font-size:14px}.journey-app input,.journey-app textarea,.travel-dialog input,.travel-dialog textarea{font-size:16px}
+.journey-app h1{font-weight:600}.journey-app h2{font-size:26px;font-weight:650;margin-bottom:18px;line-height:1.3}.journey-app h3{font-size:20px;font-weight:600}.journey-app h2 small{font-size:14px;color:#6e6e73;font-weight:400}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;align-items:end;margin:16px 0}
+.travel-card{background:white;border:1px solid #e7e7eb;border-radius:24px;padding:28px;margin:20px 0;box-shadow:0 5px 20px #17253603}
+.travel-dialog{width:calc(100vw - 28px)!important;max-width:860px!important;max-height:88dvh;overflow-y:auto;padding:24px!important;background:white;color:#1d1d1f}
+.inset{background:#f5f6f8;border-radius:16px;padding:16px}.muted{color:#6e6e73;font-size:14px}.eyebrow{font-size:12px;letter-spacing:.12em;font-weight:650;color:#587181}
+.journey-hero{padding:38px 0 16px}.journey-title{font-family:"Songti SC","STSong","Noto Serif CJK SC",serif;font-size:clamp(32px,5vw,58px)!important;font-weight:700;line-height:1.3!important;letter-spacing:.02em;height:auto!important;background:transparent!important;border:0!important;box-shadow:none!important;padding:10px 0!important;margin:8px 0 24px}
+.flight-strip{display:flex;flex-wrap:wrap;gap:18px;margin-top:24px;background:#112e49;color:white;padding:22px;border-radius:22px}.flight-strip article{display:flex;gap:14px;flex:1 1 320px}.flight-strip .muted{color:#b8cfdf}
+.quick-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin:24px 0}.quick-cards button{background:white;border:1px solid #e7e7eb;border-radius:20px;padding:24px;text-align:left;display:grid;gap:8px}.quick-cards svg{color:#0071e3}.quick-cards span{font-size:14px;color:#6e6e73}
+.journey-tabs{display:flex;justify-content:space-between;border-bottom:1px solid #ddd;margin:26px 0}.journey-tabs button{flex:1;padding:18px 4px;font-size:16px;text-align:center}.journey-tabs [aria-current]{color:#0071e3;border-bottom:3px solid #0071e3;font-weight:600}
+.geo-map{height:480px;isolation:isolate;border-radius:16px;margin:18px 0;background:#e8eff4;z-index:0}.geo-map *{overflow-wrap:normal}.journey-marker{background:#0071e3;color:white;border:2px solid white;border-radius:50%;display:grid!important;place-items:center;font-weight:bold;box-shadow:0 2px 5px #0004}
+.day-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:24px;text-align:left}
+.stop-row{display:flex;gap:18px;border-top:1px solid #eee;padding:24px 0}.stop-number{width:32px;height:32px;flex-shrink:0;border-radius:50%;background:#e7f1fc;display:grid;place-items:center;color:#0068cf}.stop-body{flex:1;display:grid;gap:12px}
+.plain-button{display:inline-flex;align-items:center;gap:6px;padding:9px 12px;border:1px solid #d7dce2;border-radius:12px;color:#006ac8;background:white;font-size:14px}
+.check{display:flex!important;gap:8px!important;align-items:center!important}.check input{width:18px;height:18px;flex-shrink:0}.ticket{background:#fff7e2;padding:12px;border-radius:10px}
+.list-row{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:18px 0;border-bottom:1px solid #eee;flex-wrap:wrap}
+.receipt{max-width:100%;max-height:460px;object-fit:contain}.big-number{font-size:34px;font-weight:650;color:#006ac8}
+.save-bar{position:sticky;bottom:12px;z-index:30;padding:16px;background:#fffffff2;box-shadow:0 4px 30px #0001;border:1px solid #ddd;border-radius:18px;display:flex;gap:14px;justify-content:space-between;align-items:center;flex-wrap:wrap;font-size:14px}.notes textarea{min-height:170px}
+.notice{background:#eaf3ff;border:1px solid #cbdff5;padding:16px;border-radius:12px;margin:16px 0;display:flex;justify-content:space-between;gap:12px}.empty{text-align:center;padding:60px 20px;display:grid;gap:16px}.bottom-tools{margin-top:30px;font-size:14px;color:#536273}summary{cursor:pointer;padding:12px 0;font-weight:600}
+@media(max-width:600px){.journey-container{padding:16px 14px 100px}.journey-top{padding:12px 14px}.user-label{display:none}.travel-card{padding:18px;border-radius:18px}.quick-cards{gap:8px}.quick-cards button{padding:14px 10px}.quick-cards strong{font-size:14px}.quick-cards span{font-size:12px}.journey-tabs button{font-size:14px}.geo-map{height:360px}.fields{grid-template-columns:1fr}.stop-row{gap:10px}.toolbar>div{width:100%}.toolbar select{width:100%}.travel-dialog{padding:18px!important}.save-bar{bottom:0;border-radius:12px}.save-bar>.row{width:100%;justify-content:flex-end}.brand{font-size:15px}}

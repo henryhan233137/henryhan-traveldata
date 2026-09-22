@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { env } from "cloudflare:workers";
+import { authAllowed } from "@/lib/free-limits";
 import {
   assertSameOrigin,
   createSession,
@@ -15,6 +16,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   if (!assertSameOrigin(request)) return NextResponse.json({ error: "无效的请求来源" }, { status: 403 });
   if (!env.DB) return NextResponse.json({ error: "数据库暂时不可用" }, { status: 503 });
+  if (!await authAllowed(request)) return NextResponse.json({error:"操作过快，请稍后再试"},{status:429});
   const body = await request.json() as { email?: string; code?: string; password?: string };
   const email = normalizeEmail(body.email ?? "");
   const code = (body.code ?? "").trim().toUpperCase();
